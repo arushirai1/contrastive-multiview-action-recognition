@@ -9,6 +9,8 @@ from .spatial_transforms import (
     MultiScaleRandomCrop, RandomHorizontalFlip, ToTensor)
 
 from .UCF101_Dataset_Train import UCF101TRAIN
+from .NTUARD_Dataset_Train import NTUARD_TRAIN
+
 from .UCF101_Dataset_Test import UCF101TEST
 import torch
 
@@ -41,5 +43,29 @@ def get_ucf101(root='Data', frames_path=''):
     return train_dataset, test_dataset
 
 
+def get_ntuard(root='Data', frames_path='/datasets/NTU-ARD/frames-240x135'):
+    ## augmentations
+    crop_scales = [1.0]
+    for _ in range(1, 5):
+        crop_scales.append(crop_scales[-1] * 0.84089641525)  ##smallest scale is 0.5
+
+    transform_train = Compose([
+        Scale(136),
+        CenterCrop(112),
+        ToTensor(1),
+    ])
+
+    transform_val = transforms.Compose([
+        Scale(136),
+        CenterCrop(112),
+        ToTensor(1),
+    ])
+
+    train_dataset = NTUARD_TRAIN(root=root, train=True, fold=1, transform=transform_train, frames_path=frames_path)
+    test_dataset = NTUARD_TRAIN(root=root, train=False, fold=1, transform=transform_val, frames_path=frames_path)
+
+    return train_dataset, test_dataset
+
+
 if __name__ == "__main__":
-    get_ucf101()
+    get_ntuard().__getitem__(0)
