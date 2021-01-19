@@ -103,8 +103,8 @@ def main_training_testing(EXP_NAME):
             import models.video_resnet as models
             model = models.r3d_18(num_classes=args.num_class)
         elif args.arch == 'i3d':
-            import models.video_resnet as models
-            model = models.r3d_18(num_classes=args.num_class)
+            import models.i3d as models
+            model = models.i3d(num_classes=args.num_class)
         return model
     
     device = torch.device('cuda', args.gpu_id)
