@@ -8,16 +8,18 @@ from .spatial_transforms import (
     Compose, Normalize, Scale, CenterCrop, CornerCrop, MultiScaleCornerCrop,
     MultiScaleRandomCrop, RandomHorizontalFlip, ToTensor)
 
-from .UCF101_Dataset_Train import UCF101TRAIN
 from .NTUARD_Dataset_Train import NTUARD_TRAIN
+import pdb
 
-from .UCF101_Dataset_Test import UCF101TEST
 import torch
 
 normal_mean = (0.5, 0.5, 0.5)
 normal_std = (0.5, 0.5, 0.5)
 
 def get_ucf101(root='Data', frames_path=''):
+    from UCF101_Dataset_Train import UCF101TRAIN
+
+    from UCF101_Dataset_Test import UCF101TEST
     ## augmentations
     crop_scales = [1.0]
     for _ in range(1, 5):
@@ -44,6 +46,7 @@ def get_ucf101(root='Data', frames_path=''):
 
 
 def get_ntuard(root='Data', frames_path='/datasets/NTU-ARD/frames-240x135'):
+
     ## augmentations
     crop_scales = [1.0]
     for _ in range(1, 5):
@@ -55,17 +58,26 @@ def get_ntuard(root='Data', frames_path='/datasets/NTU-ARD/frames-240x135'):
         ToTensor(1),
     ])
 
-    transform_val = transforms.Compose([
+    transform_val = Compose([
         Scale(136),
         CenterCrop(112),
         ToTensor(1),
     ])
 
-    train_dataset = NTUARD_TRAIN(root=root, train=True, fold=1, transform=transform_train, frames_path=frames_path)
-    test_dataset = NTUARD_TRAIN(root=root, train=False, fold=1, transform=transform_val, frames_path=frames_path)
+    train_dataset = NTUARD_TRAIN(root=root, train=True, fold=1, transform=transform_train, num_clips=1, frames_path=frames_path)
+    test_dataset = NTUARD_TRAIN(root=root, train=False, fold=1, transform=transform_val, num_clips=1, frames_path=frames_path)
 
     return train_dataset, test_dataset
 
 
 if __name__ == "__main__":
-    get_ntuard().__getitem__(0)
+    print("test")
+    import time
+    start = time.time()
+    try:
+        train_dataset, test_dataset=get_ntuard()
+    except Exception as e:
+        print(e)
+    print("test")
+    print("test", train_dataset.__getitem__(0)[0].shape)
+    print("after: ", time.time()-start)

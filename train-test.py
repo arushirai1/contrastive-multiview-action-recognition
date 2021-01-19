@@ -18,10 +18,10 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
-from Data.UCF101 import get_ucf101
+from Data.UCF101 import get_ucf101, get_ntuard
 from utils import AverageMeter, accuracy
 
-DATASET_GETTERS = {'ucf101': get_ucf101}
+DATASET_GETTERS = {'ucf101': get_ucf101, 'ntuard': get_ntuard}
 
 def save_checkpoint(state, is_best, checkpoint):
     filename=f'checkpoint.pth.tar'
@@ -56,7 +56,7 @@ def get_cosine_schedule_with_warmup(optimizer,
 
 def main_training_testing(EXP_NAME):
     parser = argparse.ArgumentParser(description='PyTorch Classification Training')
-    parser.add_argument('--out', default=f'results/{EXP_NAME}', help='directory to output the result')
+    parser.add_argument('--out', default='results', help='directory to output the result')
     parser.add_argument('--gpu-id', default='0', type=int,
                         help='id(s) for CUDA_VISIBLE_DEVICES')
     parser.add_argument('--num-workers', type=int, default=8,
@@ -92,6 +92,9 @@ def main_training_testing(EXP_NAME):
                         help='total classes')
 
     args = parser.parse_args()
+    print(args)
+    EXP_NAME+=str(args.arch) + str(args.num_workers)+str(args.batch_size)
+    out_dir=os.path.join(args.out, EXP_NAME)
     best_acc = 0
     best_acc_2 = 0
 
@@ -99,7 +102,9 @@ def main_training_testing(EXP_NAME):
         if args.arch == 'resnet3D18':
             import models.video_resnet as models
             model = models.r3d_18(num_classes=args.num_class)
-
+        elif args.arch == 'i3d':
+            import models.video_resnet as models
+            model = models.r3d_18(num_classes=args.num_class)
         return model
     
     device = torch.device('cuda', args.gpu_id)
@@ -110,8 +115,8 @@ def main_training_testing(EXP_NAME):
     if args.seed != -1:
         set_seed(args)
 
-    os.makedirs(args.out, exist_ok=True)
-    writer = SummaryWriter(args.out)
+    os.makedirs(out_dir, exist_ok=True)
+    writer = SummaryWriter(out_dir)
 
     train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path)
 
@@ -145,7 +150,7 @@ def main_training_testing(EXP_NAME):
     if args.resume:
         assert os.path.isfile(
             args.resume), "Error: no checkpoint directory found!"
-        args.out = os.path.dirname(args.resume)
+        out_dir = os.path.dirname(args.resume)
         checkpoint = torch.load(args.resume)
         best_acc = checkpoint['best_acc']
         start_epoch = checkpoint['epoch']
@@ -165,7 +170,7 @@ def main_training_testing(EXP_NAME):
         test_acc_2 = 0.0
         test_model = model
 
-        test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
+        #test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
 
         if epoch > (args.epochs+1)/2 and epoch%30==0: 
             test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
@@ -191,7 +196,7 @@ def main_training_testing(EXP_NAME):
                 'best_acc': best_acc,
                 'optimizer': optimizer.state_dict(),
                 'scheduler': scheduler.state_dict(),
-            }, is_best, args.out)
+            }, is_best, out_dir)
 
         test_accs.append(test_acc)
     with open(f'results/{EXP_NAME}/score_logger.txt', 'a+') as ofile:
@@ -231,7 +236,7 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
         if not args.no_progress:
-            p_bar.set_description("Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}.".format(
+            p_bar.set_description("Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}.\n".format(
                 epoch=epoch + 1,
                 epochs=args.epochs,
                 batch=batch_idx + 1,
@@ -260,7 +265,7 @@ def test(args, test_loader, model, epoch):
         test_loader = tqdm(test_loader)
 
     with torch.no_grad():
-        for batch_idx, (inputs, targets, video_name) in enumerate(test_loader):
+        for batch_idx, (inputs, targets) in enumerate(test_loader):
             data_time.update(time.time() - end)
             model.eval()
 
@@ -273,19 +278,19 @@ def test(args, test_loader, model, epoch):
             targets = targets.cpu().numpy().tolist()
             outputs = outputs.cpu().numpy().tolist()
             
-            for iterator in range(len(video_name)):
-                if video_name[iterator] not in predicted_target:
-                    predicted_target[video_name[iterator]] = []
+            for iterator in range(len(targets)):
+                if targets[iterator] not in predicted_target:
+                    predicted_target[targets[iterator]] = []
                 
-                if video_name[iterator] not in predicted_target_not_softmax:
-                    predicted_target_not_softmax[video_name[iterator]] = []
+                if targets[iterator] not in predicted_target_not_softmax:
+                    predicted_target_not_softmax[targets[iterator]] = []
 
-                if video_name[iterator] not in ground_truth_target:
-                    ground_truth_target[video_name[iterator]] = []
+                if targets[iterator] not in ground_truth_target:
+                    ground_truth_target[targets[iterator]] = []
 
-                predicted_target[video_name[iterator]].append(out_prob[iterator])
-                predicted_target_not_softmax[video_name[iterator]].append(outputs[iterator])
-                ground_truth_target[video_name[iterator]].append(targets[iterator])
+                predicted_target[targets[iterator]].append(out_prob[iterator])
+                predicted_target_not_softmax[targets[iterator]].append(outputs[iterator])
+                ground_truth_target[targets[iterator]].append(targets[iterator])
                 
             losses.update(loss.item(), inputs.shape[0])
             batch_time.update(time.time() - end)
@@ -341,5 +346,5 @@ def test(args, test_loader, model, epoch):
 
 if __name__ == '__main__':
     cudnn.benchmark = True
-    EXP_NAME = 'UCF101_SUPERVISED_TRAINING'
+    EXP_NAME = 'NTUARD_SUPERVISED_TRAINING'
     main_training_testing(EXP_NAME)

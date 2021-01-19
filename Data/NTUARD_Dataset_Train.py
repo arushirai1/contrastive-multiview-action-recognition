@@ -31,7 +31,6 @@ class NTUARD_TRAIN(Dataset):
             self.views=[1]
         self.fold = fold
         self.video_paths, self.targets = self.build_paths()
-        exit(0)
         self.targets = np.array(self.targets)
         self.transform = transform
 
@@ -41,18 +40,18 @@ class NTUARD_TRAIN(Dataset):
     def __getitem__(self, idx):
         video_dict, video_label = self.video_paths[idx], self.targets[idx]
         video = self.get_video(video_dict)
-        return video, video_label
+        return video, video_label-1
 
     def get_video(self, video_dict):
         no_frames = video_dict['no_frames']
-        skip_rate = 1
-        total_frames = 16*skip_rate
+        skip_rate = 2
+        total_frames = self.num_frames*skip_rate
 
         if total_frames > no_frames:
             skip_rate = skip_rate -1
             if skip_rate == 0:
                 skip_rate = 1
-            total_frames = 16*skip_rate
+            total_frames = self.num_frames*skip_rate
 
         try:
             start_frame = random.randint(0, no_frames - total_frames) ## 32, 16 frames
@@ -67,7 +66,7 @@ class NTUARD_TRAIN(Dataset):
 
         if self.transform is not None:
             self.transform.randomize_parameters()
-            clip = [transforms.functional.normalize(self.transform(img), normal_mean, normal_std) for img in video_container]
+            clip = [self.transform(img) for img in video_container] #[transforms.functional.normalize(self.transform(img), normal_mean, normal_std) for img in video_container]
         clip = torch.stack(clip, 0).permute(1, 0, 2, 3)
         return clip
 
@@ -83,9 +82,9 @@ class NTUARD_TRAIN(Dataset):
         data_paths = []
         targets = []
         if self.train:
-            annotation_path = os.path.join(self.root, 'ntuTrainTestlist', 'train.list')
+            annotation_path = os.path.join(self.root, 'ntuTrainTestList', 'train.list')
         else:
-            annotation_path = os.path.join(self.root, 'ntuTrainTestlist', 'val.list')
+            annotation_path = os.path.join(self.root, 'ntuTrainTestList', 'val.list')
         
         with open(annotation_path, "r") as fid:
             dataList = fid.readlines()
