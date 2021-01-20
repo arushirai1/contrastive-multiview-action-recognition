@@ -15,4 +15,4 @@ module load anaconda/anaconda3
 module load cuda/cuda-11.0
 source activate cv-arushi
 
-python train-test.py --dataset ntuard --arch i3d --epochs 1 --batch-size 64 --lr 0.03 --seed 1 --num-class 60 --frames-path /datasets/NTU-ARD/frames-240x135 --num-workers 16
+python train-test.py --dataset ntuard --arch resnet3D18 --epochs 200 --batch-size 64 --lr 0.03 --seed 1 --num-class 60 --frames-path /datasets/NTU-ARD/frames-240x135 --num-workers 16 --pretrained

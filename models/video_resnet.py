@@ -283,13 +283,17 @@ class VideoResNet(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
 
-def _video_resnet(arch, pretrained=False, progress=True, **kwargs):
+def _video_resnet(arch, pretrained=False, progress=True, num_classes=60, **kwargs):
     model = VideoResNet(**kwargs)
 
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
                                               progress=progress)
+        model.fc = nn.Linear(512 * BasicBlock.expansion, 400)
+
         model.load_state_dict(state_dict)
+        model.fc = nn.Linear(512 * BasicBlock.expansion, num_classes)
+
     return model
 
 

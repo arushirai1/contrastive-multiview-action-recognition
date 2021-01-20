@@ -81,6 +81,8 @@ def main_training_testing(EXP_NAME):
                         help='weight decay')
     parser.add_argument('--nesterov', action='store_true', default=True,
                         help='use nesterov momentum')
+    parser.add_argument('--pretrained', action='store_true', default=False,
+                        help='use pretrained version')
     parser.add_argument('--resume', default='', type=str,help='path to latest checkpoint (default: none)')
     parser.add_argument('--seed', type=int, default=-1,
                         help="random seed (-1: don't use random seed)")
@@ -93,7 +95,7 @@ def main_training_testing(EXP_NAME):
 
     args = parser.parse_args()
     print(args)
-    EXP_NAME+=str(args.arch) + str(args.num_workers)+str(args.batch_size)
+    EXP_NAME+=str(args.arch) + str(args.num_workers)+str(args.batch_size)+'_'+str(args.pretrained)
     out_dir=os.path.join(args.out, EXP_NAME)
     best_acc = 0
     best_acc_2 = 0
@@ -101,10 +103,10 @@ def main_training_testing(EXP_NAME):
     def create_model(args):
         if args.arch == 'resnet3D18':
             import models.video_resnet as models
-            model = models.r3d_18(num_classes=args.num_class)
+            model = models.r3d_18(num_classes=args.num_class, pretrained=args.pretrained)
         elif args.arch == 'i3d':
             import models.i3d as models
-            model = models.i3d(num_classes=args.num_class)
+            model = models.i3d(num_classes=args.num_class, pretrained=args.pretrained, pretrained_path='./models/rgb_imagenet.pt')
         return model
     
     device = torch.device('cuda', args.gpu_id)
@@ -170,12 +172,13 @@ def main_training_testing(EXP_NAME):
         test_acc_2 = 0.0
         test_model = model
 
-        #test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
-
+        test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
+        '''
         if epoch > (args.epochs+1)/2 and epoch%30==0: 
             test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
         elif epoch == (args.epochs-1):
             test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
+        '''
 
         writer.add_scalar('train/1.train_loss', train_loss, epoch)
         writer.add_scalar('test/1.test_acc', test_acc, epoch)
@@ -256,6 +259,8 @@ def test(args, test_loader, model, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
+    #top1 = AverageMeter()
+    #top5 = AverageMeter()
     end = time.time()
     predicted_target = {}
     ground_truth_target = {}
