@@ -284,7 +284,7 @@ class VideoResNet(nn.Module):
 
 
 def _video_resnet(arch, pretrained=False, progress=True, num_classes=60, **kwargs):
-    model = VideoResNet(**kwargs)
+    model = VideoResNet(num_classes=num_classes, **kwargs)
 
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],

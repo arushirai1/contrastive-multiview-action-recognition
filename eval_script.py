@@ -3,6 +3,7 @@ import math
 import os
 import shutil
 import time
+import numpy as np
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -17,45 +18,30 @@ from utils import AverageMeter, accuracy
 DATASET_GETTERS = {'ucf101': get_ucf101, 'ntuard': get_ntuard}
 
 '''
+results/NTUARD_SUPERVISED_TRAININGi3d1664/score_logger.txt
+results/NTUARD_SUPERVISED_TRAININGi3d1664_True/score_logger.txt
+results/NTUARD_SUPERVISED_TRAININGresnet3D181664/score_logger.txt
+results/NTUARD_SUPERVISED_TRAININGresnet3D181664_True/score_logger.txt
+
 NTUARD_SUPERVISED_TRAININGi3d1664
 NTUARD_SUPERVISED_TRAININGi3d1664_True
 NTUARD_SUPERVISED_TRAININGresnet3D181664
 NTUARD_SUPERVISED_TRAININGresnet3D181664_True
 '''
-def save_checkpoint(state, is_best, checkpoint):
-    filename = f'checkpoint.pth.tar'
-    filepath = os.path.join(checkpoint, filename)
-    torch.save(state, filepath)
-    if is_best:
-        shutil.copyfile(filepath, os.path.join(checkpoint, f'model_best.pth.tar'))
-
-
-def get_cosine_schedule_with_warmup(optimizer,
-                                    num_warmup_steps,
-                                    num_training_steps,
-                                    num_cycles=7. / 16.,
-                                    last_epoch=-1):
-    def _lr_lambda(current_step):
-        if current_step < num_warmup_steps:
-            return float(current_step) / float(max(1, num_warmup_steps))
-        no_progress = float(current_step - num_warmup_steps) / \
-                      float(max(1, num_training_steps - num_warmup_steps))
-        return max(0., math.cos(math.pi * num_cycles * no_progress))
-
-    return LambdaLR(optimizer, _lr_lambda, last_epoch)
 def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
     maxk = max(topk)
     batch_size = target.size(0)
 
-    _, pred = output.topk(maxk, 1, True, True)
-    pred = pred.t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
+    _, indices = torch.topk(output, maxk, dim=1, largest=True, sorted=True)
 
     res = []
     for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
-        res.append(correct_k.mul_(100.0 / batch_size))
+        count=0.0
+        for i, t in enumerate(target):
+            if t in indices[i,:k]:
+                count+=100.0 / batch_size
+        res.append(count)
     return res
 
 def evaluate():
@@ -64,6 +50,8 @@ def evaluate():
     parser.add_argument('--arch', default='i3d', help='Model architecture')
     parser.add_argument('--num-class', default=60, type=int,
                         help='total classes')
+    parser.add_argument('--frames-path', default='/datasets/UCF-101/Frames/frames-128x128/', type=str,
+                        help='video frames path')
     parser.add_argument('--gpu-id', default='0', type=int,
                         help='id(s) for CUDA_VISIBLE_DEVICES')
     parser.add_argument('--num-workers', type=int, default=8,
@@ -90,7 +78,6 @@ def evaluate():
     _, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path)
 
     model = create_model(args)
-    model.to(args.device)
 
 
     test_loader = DataLoader(
@@ -100,17 +87,86 @@ def evaluate():
         num_workers=args.num_workers,
         pin_memory=True)
 
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, nesterov=args.nesterov)
+    state_dict = torch.load(os.path.join(args.modeldir, 'model_best.pth.tar'))['state_dict']
+    model.load_state_dict(state_dict)
+    model.to(args.device)
 
-    args.total_steps = args.epochs * args.iteration
-    scheduler = get_cosine_schedule_with_warmup(
-        optimizer, args.warmup * args.iteration, args.total_steps)
-    model.load_state_dict(torch.load(os.path.join(args.modelpath, 'model_best.pth.tar')))
-
-    test_loss, test_top1, test_top5 = test(args, test_loader, model)
+    test_loss, test_top1, test_top5, predictions_by_ground_truth = test2(args, test_loader, model)
     print(test_loss, test_top1, test_top5)
+    with open('prediction_by_ground_truth.pickle', 'wb') as f:
+        import pickle
+        pickle.dump(predictions_by_ground_truth, f)
+    '''
+    with open('ucf101-supervised/prediction_by_ground_truth.pickle', 'rb') as f:
+        import pickle
+        predictions_by_ground_truth=pickle.load(f)
+    list(list(zip(*predictions_by_ground_truth.values()))[1])
+    indexes = np.argpartition(np.array(list(list(zip(*predictions_by_ground_truth.values()))[1])), -5)[-5:]
+    np.array(list(predictions_by_ground_truth.keys()))[indexes]
+    '''
 
-def test(args, test_loader, model, ):
+def test2(args, test_loader, model):
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+    end = time.time()
+    predicted_target = {}
+
+    if True:
+        test_loader = tqdm(test_loader)
+
+    with torch.no_grad():
+        for batch_idx, (inputs, targets) in enumerate(test_loader):
+            data_time.update(time.time() - end)
+            model.eval()
+
+            inputs = inputs.to(args.device)
+            targets = targets.to(args.device)
+            outputs = model(inputs)
+            prec1, prec5 = accuracy(outputs.data, targets, topk=(1, 5))
+            top1.update(prec1, inputs.size(0))
+            top5.update(prec5, inputs.size(0))
+
+            loss = F.cross_entropy(outputs, targets)
+            targets = targets.cpu().numpy().tolist()
+            outputs = outputs.cpu().numpy().tolist()
+
+            for iterator in range(len(targets)):
+                # init key,val in dicts if empty
+                if targets[iterator] not in predicted_target:
+                    predicted_target[targets[iterator]] = []
+
+                predicted_target[targets[iterator]].append(outputs[iterator])
+
+
+            losses.update(loss.item(), inputs.shape[0])
+            batch_time.update(time.time() - end)
+            end = time.time()
+            if True:
+                test_loader.set_description(
+                    "Test Iter: {batch:4}/{iter:4}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}".format(
+                        batch=batch_idx + 1,
+                        iter=len(test_loader),
+                        data=data_time.avg,
+                        bt=batch_time.avg,
+                        loss=losses.avg,
+                        acc=top1.avg
+                    ))
+        if True:
+            test_loader.close()
+
+    for key in predicted_target:
+        clip_values = np.array(predicted_target[key])
+
+        video_pred = np.argmax(clip_values, axis=1)
+        acc_by_key = (video_pred.shape[0]-np.count_nonzero(video_pred-key))/video_pred.shape[0]
+        predicted_target[key] = (video_pred, acc_by_key)
+    return losses.avg, top1.avg, top5.avg, predicted_target
+
+
+def test(args, test_loader, model):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -118,8 +174,7 @@ def test(args, test_loader, model, ):
     top5 = AverageMeter()
     end = time.time()
 
-    if not args.no_progress:
-        test_loader = tqdm(test_loader)
+    test_loader = tqdm(test_loader)
     model.eval()
 
     with torch.no_grad():
@@ -130,14 +185,11 @@ def test(args, test_loader, model, ):
             targets = targets.to(args.device)
 
             outputs = model(inputs)
-            loss = F.cross_entropy(outputs, targets)
-
-            targets = targets.cpu().numpy().tolist()
-            outputs = outputs.cpu().numpy().tolist()
+            loss = F.cross_entropy(outputs, targets, reduction='mean')
 
             prec1, prec5 = accuracy(outputs.data, targets, topk=(1, 5))
-            top1.update(prec1[0], inputs.size(0))
-            top5.update(prec5[0], inputs.size(0))
+            top1.update(prec1, inputs.size(0))
+            top5.update(prec5, inputs.size(0))
 
             losses.update(loss.item(), inputs.shape[0])
             batch_time.update(time.time() - end)
