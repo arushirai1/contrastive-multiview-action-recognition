@@ -73,6 +73,8 @@ def main_training_testing(EXP_NAME):
                         help='video frames path')
     parser.add_argument('--batch-size', default=64, type=int,
                         help='train batchsize')
+    parser.add_argument('--no-clips', default=1, type=int,
+                        help='number of clips')
     parser.add_argument('--lr', '--learning-rate', default=0.03, type=float,
                         help='initial learning rate, default 0.03')
     parser.add_argument('--warmup', default=0, type=float,
@@ -83,6 +85,8 @@ def main_training_testing(EXP_NAME):
                         help='use nesterov momentum')
     parser.add_argument('--pretrained', action='store_true', default=False,
                         help='use pretrained version')
+    parser.add_argument('--use-gru', action='store_true', default=False,
+                        help='use gru')
     parser.add_argument('--resume', default='', type=str,help='path to latest checkpoint (default: none)')
     parser.add_argument('--seed', type=int, default=-1,
                         help="random seed (-1: don't use random seed)")
@@ -95,7 +99,7 @@ def main_training_testing(EXP_NAME):
 
     args = parser.parse_args()
     print(args)
-    EXP_NAME+=str(args.arch) + str(args.num_workers)+str(args.batch_size)+'_'+str(args.pretrained)
+    EXP_NAME+=str(args.arch) + str(args.num_workers)+str(args.batch_size)+'_'+str(args.pretrained)+'_clips_'+str(args.no_clips)+'_gru_'+str(args.use_gru)
     out_dir=os.path.join(args.out, EXP_NAME)
     best_acc = 0
     best_acc_2 = 0
@@ -106,7 +110,7 @@ def main_training_testing(EXP_NAME):
             model = models.r3d_18(num_classes=args.num_class, pretrained=args.pretrained)
         elif args.arch == 'i3d':
             import models.i3d as models
-            model = models.i3d(num_classes=args.num_class, pretrained=args.pretrained, pretrained_path='./models/rgb_imagenet.pt')
+            model = models.i3d(num_classes=args.num_class, use_gru= args.use_gru, pretrained=args.pretrained, pretrained_path='./models/rgb_imagenet.pt')
         return model
     
     device = torch.device('cuda', args.gpu_id)
@@ -120,7 +124,7 @@ def main_training_testing(EXP_NAME):
     os.makedirs(out_dir, exist_ok=True)
     writer = SummaryWriter(out_dir)
 
-    train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path)
+    train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips = args.no_clips)
 
     model = create_model(args)
     model.to(args.device)
@@ -208,11 +212,27 @@ def main_training_testing(EXP_NAME):
     if args.local_rank in [-1, 0]:
         writer.close()
 
+def accuracy(output, target, topk=(1,)):
+    """Computes the precision@k for the specified values of k"""
+    maxk = max(topk)
+    batch_size = target.size(0)
 
+    _, indices = torch.topk(output, maxk, dim=1, largest=True, sorted=True)
+
+    res = []
+    for k in topk:
+        count=0.0
+        for i, t in enumerate(target):
+            if t in indices[i,:k]:
+                count+=100.0 / batch_size
+        res.append(count)
+    return res
 
 def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
     losses = AverageMeter()
     end = time.time()
 
@@ -226,11 +246,15 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
 
         inputs = inputs_x.to(args.device)
         targets_x = targets_x.to(args.device)
-        
+
         logits_x = model(inputs)
         loss = F.cross_entropy(logits_x, targets_x, reduction='mean')
         loss.backward()
         losses.update(loss.item())
+
+        prec1, prec5 = accuracy(logits_x.data, targets_x, topk=(1, 5))
+        top1.update(prec1, inputs.size(0))
+        top5.update(prec5, inputs.size(0))
 
         optimizer.step()
         scheduler.step()
@@ -239,7 +263,7 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
         if not args.no_progress:
-            p_bar.set_description("Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}.\n".format(
+            p_bar.set_description("Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}\n".format(
                 epoch=epoch + 1,
                 epochs=args.epochs,
                 batch=batch_idx + 1,
@@ -247,7 +271,8 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
                 lr=scheduler.get_lr()[0],
                 data=data_time.avg,
                 bt=batch_time.avg,
-                loss=losses.avg))
+                loss=losses.avg,
+                acc=top1.avg))
             p_bar.update()
     if not args.no_progress:
         p_bar.close()
@@ -259,95 +284,45 @@ def test(args, test_loader, model, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
-    #top1 = AverageMeter()
-    #top5 = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
     end = time.time()
-    predicted_target = {}
-    ground_truth_target = {}
-    predicted_target_not_softmax = {}
-
     if not args.no_progress:
         test_loader = tqdm(test_loader)
+
+    model.eval()
 
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(test_loader):
             data_time.update(time.time() - end)
-            model.eval()
 
             inputs = inputs.to(args.device)
             targets = targets.to(args.device)
+
             outputs = model(inputs)
-            loss = F.cross_entropy(outputs, targets)
-            out_prob = F.softmax(outputs, dim=1)
-            out_prob = out_prob.cpu().numpy().tolist()
-            targets = targets.cpu().numpy().tolist()
-            outputs = outputs.cpu().numpy().tolist()
-            
-            for iterator in range(len(targets)):
-                if targets[iterator] not in predicted_target:
-                    predicted_target[targets[iterator]] = []
-                
-                if targets[iterator] not in predicted_target_not_softmax:
-                    predicted_target_not_softmax[targets[iterator]] = []
+            loss = F.cross_entropy(outputs, targets, reduction='mean')
 
-                if targets[iterator] not in ground_truth_target:
-                    ground_truth_target[targets[iterator]] = []
+            prec1, prec5 = accuracy(outputs.data, targets, topk=(1, 5))
+            top1.update(prec1, inputs.size(0))
+            top5.update(prec5, inputs.size(0))
 
-                predicted_target[targets[iterator]].append(out_prob[iterator])
-                predicted_target_not_softmax[targets[iterator]].append(outputs[iterator])
-                ground_truth_target[targets[iterator]].append(targets[iterator])
-                
             losses.update(loss.item(), inputs.shape[0])
             batch_time.update(time.time() - end)
             end = time.time()
             if not args.no_progress:
-                test_loader.set_description("Test Iter: {batch:4}/{iter:4}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. ".format(
-                    batch=batch_idx + 1,
-                    iter=len(test_loader),
-                    data=data_time.avg,
-                    bt=batch_time.avg,
-                    loss=losses.avg
-                ))
+                test_loader.set_description(
+                    "Test Iter: {batch:4}/{iter:4}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}".format(
+                        batch=batch_idx + 1,
+                        iter=len(test_loader),
+                        data=data_time.avg,
+                        bt=batch_time.avg,
+                        loss=losses.avg,
+                        acc=top1.avg
+                    ))
         if not args.no_progress:
             test_loader.close()
 
-    for key in predicted_target:
-        clip_values = np.array(predicted_target[key]).mean(axis=0)
-        video_pred = np.argmax(clip_values)
-        predicted_target[key] = video_pred
-    
-    for key in predicted_target_not_softmax:
-        clip_values = np.array(predicted_target_not_softmax[key]).mean(axis=0)
-        video_pred = np.argmax(clip_values)
-        predicted_target_not_softmax[key] = video_pred
-    
-    for key in ground_truth_target:
-        clip_values = np.array(ground_truth_target[key]).mean(axis=0)
-        ground_truth_target[key] = int(clip_values)
-
-    pred_values = []
-    pred_values_not_softmax = []
-    target_values = []
-
-    for key in predicted_target:
-        pred_values.append(predicted_target[key])
-        pred_values_not_softmax.append(predicted_target_not_softmax[key])
-        target_values.append(ground_truth_target[key])
-    
-    pred_values = np.array(pred_values)
-    pred_values_not_softmax = np.array(pred_values_not_softmax)
-    target_values = np.array(target_values)
-
-    secondary_accuracy = (pred_values == target_values)*1
-    secondary_accuracy = (sum(secondary_accuracy)/len(secondary_accuracy))*100
-    print(f'test accuracy after softmax: {secondary_accuracy}')
-
-    secondary_accuracy_not_softmax = (pred_values_not_softmax == target_values)*1
-    secondary_accuracy_not_softmax = (sum(secondary_accuracy_not_softmax)/len(secondary_accuracy_not_softmax))*100
-    print(f'test accuracy before softmax: {secondary_accuracy_not_softmax}')
-
-    return losses.avg, secondary_accuracy, secondary_accuracy_not_softmax
-
+    return losses.avg, top1.avg, top5.avg
 
 if __name__ == '__main__':
     cudnn.benchmark = True

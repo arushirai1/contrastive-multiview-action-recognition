@@ -5,6 +5,7 @@ from torch.autograd import Variable
 
 import numpy as np
 
+import pdb
 import os
 import sys
 from collections import OrderedDict
@@ -189,7 +190,7 @@ class InceptionI3d(nn.Module):
     )
 
     def __init__(self, num_classes=400, spatial_squeeze=True,
-                 final_endpoint='Logits', name='inception_i3d', in_channels=3, dropout_keep_prob=0.5):
+                 final_endpoint='Logits', name='inception_i3d', in_channels=3, dropout_keep_prob=0.5, use_gru=False, hidden_dim=512):
         """Initializes I3D model instance.
         Args:
           num_classes: The number of outputs in the logit layer (default 400, which
@@ -298,7 +299,19 @@ class InceptionI3d(nn.Module):
         self.avg_pool = nn.AvgPool3d(kernel_size=[1, 4, 4],
                                      stride=(1, 1, 1))
         self.dropout = nn.Dropout(dropout_keep_prob)
-        self.logits = Unit3D(in_channels=384 + 384 + 128 + 128, output_channels=self._num_classes,
+
+        self.use_gru = use_gru
+        if self.use_gru:
+            self.gru = nn.GRU(384 + 384 + 128 + 128, hidden_dim, batch_first=True)
+            self.logits = Unit3D(in_channels=hidden_dim, output_channels=self._num_classes,
+                             kernel_shape=[1, 1, 1],
+                             padding=0,
+                             activation_fn=None,
+                             use_batch_norm=False,
+                             use_bias=True,
+                             name='logits')
+        else:
+            self.logits = Unit3D(in_channels=384 + 384 + 128 + 128, output_channels=self._num_classes,
                              kernel_shape=[1, 1, 1],
                              padding=0,
                              activation_fn=None,
@@ -324,18 +337,47 @@ class InceptionI3d(nn.Module):
         for k in self.end_points.keys():
             self.add_module(k, self.end_points[k])
         print(self.end_points.keys())
-
-    def forward(self, x):
+    def _avgforward(self, x):
+        clips = x.shape[1]
+        x = x.view(-1, 3, 8, 112, 112)
+        # pool = nn.AdaptiveAvgPool3d((1024, 1, 4, 4))
+        # torch.Size([192, 1024, 1, 4, 4])
         for end_point in self.VALID_ENDPOINTS:
             if end_point in self.end_points:
                 x = self._modules[end_point](x)  # use _modules to work with dataparallel
-
+        x = x.view(-1, clips, 1024, 1, 4, 4)
+        x = (torch.sum(x, dim=1) / clips)
         if self.logits:
             x = self.logits(self.dropout(self.avg_pool(x)))
             if self._spatial_squeeze:
                 x = x.squeeze(3).squeeze(3)
             pool = nn.AdaptiveAvgPool2d((self._num_classes, 1))
             x = pool(x).squeeze(2)
+        # logits is batch X time X classes, which is what we want to work with
+        return x
+    def forward(self, x):
+        if not self.use_gru:
+            return self._avgforward(x)
+        clips=x.shape[1]
+        x=x.view(-1,3,8, 112,112)
+        #pool = nn.AdaptiveAvgPool3d((1024, 1, 4, 4))
+        #torch.Size([192, 1024, 1, 4, 4])
+        for end_point in self.VALID_ENDPOINTS:
+            if end_point in self.end_points:
+                x = self._modules[end_point](x)  # use _modules to work with dataparallel
+
+        if self.logits:
+            x = self.dropout(self.avg_pool(x))
+            x = x.view(-1, clips, 1024, 1, 1, 1)
+            if self._spatial_squeeze:
+                x = x.squeeze(3).squeeze(3).squeeze(3)
+            #insert gru
+            _, x = self.gru(x)
+            x = x[0]
+            x = nn.ReLU()(x)
+            x = nn.Dropout(0.2) (x)
+            x = self.logits(x.view(-1,512,1,1,1))
+            x=x.squeeze(3).squeeze(3).squeeze(2)
         # logits is batch X time X classes, which is what we want to work with
         return x
 
@@ -352,11 +394,11 @@ class InceptionI3d(nn.Module):
         return x
 
 
-def i3d(sobel=False, bn=True, num_classes=1000, pretrained=False, pretrained_path=''):
+def i3d(sobel=False, bn=True, use_gru=False, num_classes=1000, pretrained=False, pretrained_path=''):
     if pretrained:
         model = InceptionI3d(400)
         model.load_state_dict(torch.load(pretrained_path))
         model.replace_logits(num_classes)
     else:
-        model = InceptionI3d(num_classes)
+        model = InceptionI3d(num_classes, use_gru=use_gru)
     return model
