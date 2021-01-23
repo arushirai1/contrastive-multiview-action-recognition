@@ -87,6 +87,8 @@ def main_training_testing(EXP_NAME):
                         help='use pretrained version')
     parser.add_argument('--use-gru', action='store_true', default=False,
                         help='use gru')
+    parser.add_argument('--cross-subject', action='store_true', default=False,
+                        help='Training and testing on cross subject split')
     parser.add_argument('--resume', default='', type=str,help='path to latest checkpoint (default: none)')
     parser.add_argument('--seed', type=int, default=-1,
                         help="random seed (-1: don't use random seed)")
@@ -99,7 +101,7 @@ def main_training_testing(EXP_NAME):
 
     args = parser.parse_args()
     print(args)
-    EXP_NAME+=str(args.arch) + str(args.num_workers)+str(args.batch_size)+'_'+str(args.pretrained)+'_clips_'+str(args.no_clips)+'_gru_'+str(args.use_gru)
+    EXP_NAME+=str(args.arch) + str(args.num_workers)+str(args.batch_size)+'_'+str(args.pretrained)+'_clips_'+str(args.no_clips)+'_gru_'+str(args.use_gru)+'_CS_'+str(args.cross_subject)
     out_dir=os.path.join(args.out, EXP_NAME)
     best_acc = 0
     best_acc_2 = 0
@@ -124,7 +126,7 @@ def main_training_testing(EXP_NAME):
     os.makedirs(out_dir, exist_ok=True)
     writer = SummaryWriter(out_dir)
 
-    train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips = args.no_clips)
+    train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips = args.no_clips, cross_subject = args.cross_subject)
 
     model = create_model(args)
     model.to(args.device)

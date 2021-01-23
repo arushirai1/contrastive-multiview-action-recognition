@@ -5,7 +5,7 @@
 #SBATCH --mem-per-cpu=16gb
 #SBATCH --gres-flags=enforce-binding   # Insist on good CPU/GPU alignment
 #SBATCH --gres=gpu:1                   # And two GPU
-#SBATCH --time=10:00:00              # Run for 7 days, at most
+#SBATCH --time=12:00:00              # Run for 7 days, at most
 #SBATCH --job-name=cross-subject-i3d              # Name the job so I can see it in squeue
 #SBATCH --output=cross-subject-i3d-%J.out
 #SBATCH --mail-type=BEGIN,END,FAIL     # Send me email for various states
@@ -15,4 +15,4 @@ module load anaconda/anaconda3
 module load cuda/cuda-11.0
 source activate cv-arushi
 
-python train-test.py --dataset ntuard --arch resnet3D18 --epochs 200 --batch-size 64 --lr 0.03 --seed 1 --num-class 60 --frames-path /datasets/NTU-ARD/frames-240x135 --num-workers 16 --pretrained
+python train-test.py --dataset ntuard --no-clips 3 --arch i3d --cross-subject --epochs 75 --batch-size 16 --lr 0.03 --seed 1 --num-class 60 --frames-path /datasets/NTU-ARD/frames-240x135 --num-workers 16

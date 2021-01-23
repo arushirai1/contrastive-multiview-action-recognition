@@ -45,7 +45,7 @@ def get_ucf101(root='Data', frames_path=''):
     return train_dataset, test_dataset
 
 
-def get_ntuard(root='Data', frames_path='/datasets/NTU-ARD/frames-240x135'):
+def get_ntuard(root='Data', frames_path='/datasets/NTU-ARD/frames-240x135', num_clips=1, cross_subject=False):
 
     ## augmentations
     crop_scales = [1.0]
@@ -64,8 +64,8 @@ def get_ntuard(root='Data', frames_path='/datasets/NTU-ARD/frames-240x135'):
         ToTensor(1),
     ])
 
-    train_dataset = NTUARD_TRAIN(root=root, train=True, fold=1, transform=transform_train, num_clips=1, frames_path=frames_path)
-    test_dataset = NTUARD_TRAIN(root=root, train=False, fold=1, transform=transform_val, num_clips=1, frames_path=frames_path)
+    train_dataset = NTUARD_TRAIN(root=root, train=True, fold=1, cross_subject=cross_subject, transform=transform_train, num_clips=num_clips, frames_path=frames_path)
+    test_dataset = NTUARD_TRAIN(root=root, train=False, fold=1, cross_subject=cross_subject, transform=transform_val, num_clips=num_clips, frames_path=frames_path)
 
     return train_dataset, test_dataset
 

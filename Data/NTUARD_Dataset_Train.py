@@ -18,17 +18,22 @@ from torchvision import transforms
 
 
 class NTUARD_TRAIN(Dataset):
-    def __init__(self, root = '', train=True, fold=1, transform=None, frames_path='', num_clips=3, num_frames=8):
+    def __init__(self, root = '', train=True, fold=1, transform=None, frames_path='', num_clips=3, num_frames=8, cross_subject=False):
 
         self.num_clips = num_clips
         self.num_frames = num_frames
         self.frames_path = frames_path
         self.root = root
         self.train = train
-        if self.train:
-            self.views=[2,3]
+        self.cross_subject = cross_subject
+        if not cross_subject:
+            if self.train:
+                self.views=[2,3]
+            else:
+                self.views=[1]
         else:
-            self.views=[1]
+            self.views=[1,2,3]
+
         self.fold = fold
         self.video_paths, self.targets = self.build_paths()
         self.targets = np.array(self.targets)
@@ -43,32 +48,41 @@ class NTUARD_TRAIN(Dataset):
         return video, video_label-1
 
     def get_video(self, video_dict):
-        no_frames = video_dict['no_frames']
-        skip_rate = 2
+        no_frames = video_dict['no_frames']-1
+        skip_rate = 1
         total_frames = self.num_frames*skip_rate
 
-        if total_frames > no_frames:
+        if total_frames*self.num_clips > no_frames:
             skip_rate = skip_rate -1
             if skip_rate == 0:
                 skip_rate = 1
-            total_frames = self.num_frames*skip_rate
+            total_frames = (self.num_frames)*skip_rate
 
         try:
-            start_frame = random.randint(0, no_frames - total_frames) ## 32, 16 frames
-        except:
-            start_frame = 0
-        video_container = []
-        for item in range(start_frame, start_frame + total_frames, skip_rate):
-            image_name = '{:03d}.jpg'.format(item)
-            image_path = os.path.join(video_dict['path'], image_name)
-            current_image = Image.open(image_path).convert('RGB')
-            video_container.append(current_image)
+            #start_frame = random.randint(0, no_frames - total_frames) ## 32, 16 frames
+            ids = np.sort(np.random.randint([i * no_frames // self.num_clips for i in range(self.num_clips)],
+                                      [i * (no_frames // self.num_clips) - total_frames for i in range(1, self.num_clips+1)], self.num_clips))
 
-        if self.transform is not None:
-            self.transform.randomize_parameters()
-            clip = [self.transform(img) for img in video_container] #[transforms.functional.normalize(self.transform(img), normal_mean, normal_std) for img in video_container]
-        clip = torch.stack(clip, 0).permute(1, 0, 2, 3)
-        return clip
+        except:
+            #print("Frame exception", no_frames, total_frames, self.num_clips*total_frames)
+            #start_frame = 0
+            ids = [i*(total_frames-skip_rate) for i in range(self.num_clips)]
+            #print("passed exception")
+        clips = []
+        for start_frame in ids:
+            video_container = []
+            for item in range(start_frame, start_frame + total_frames, skip_rate):
+                image_name = '{:03d}.jpg'.format(item)
+                image_path = os.path.join(video_dict['path'], image_name)
+                current_image = Image.open(image_path).convert('RGB')
+                video_container.append(current_image)
+
+            if self.transform is not None:
+                self.transform.randomize_parameters()
+                clip = [self.transform(img) for img in video_container] #[transforms.functional.normalize(self.transform(img), normal_mean, normal_std) for img in video_container]
+            clip = torch.stack(clip, 0).permute(1, 0, 2, 3)
+            clips.append(clip)
+        return torch.stack(clips)
 
     def _decrypt_vid_name(self, vid):
         scene = int(vid[1:4])
@@ -81,10 +95,14 @@ class NTUARD_TRAIN(Dataset):
     def build_paths(self):
         data_paths = []
         targets = []
-        if self.train:
+        # train and val list are the splits for cross subject
+        # video and video1 are the splits for cross view
+        if self.train and self.cross_subject:
             annotation_path = os.path.join(self.root, 'ntuTrainTestList', 'train.list')
-        else:
+        elif self.cross_subject:
             annotation_path = os.path.join(self.root, 'ntuTrainTestList', 'val.list')
+        else:
+            annotation_path = os.path.join(self.root, 'ntuTrainTestList', 'cross_view_split.list')
         
         with open(annotation_path, "r") as fid:
             dataList = fid.readlines()

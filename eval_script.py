@@ -74,6 +74,8 @@ def evaluate():
                         help='dataset name')
     parser.add_argument('--use-gru', action='store_true', default=False,
                         help='use gru')
+    parser.add_argument('--cross-subject', action='store_true', default=False,
+                        help='Training and testing on cross subject split')
     parser.add_argument('--batch-size', default=64, type=int,
                         help='train batchsize')
     args = parser.parse_args()
@@ -91,7 +93,7 @@ def evaluate():
     args.world_size = 1
     args.n_gpu = torch.cuda.device_count()
 
-    _, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips=args.no_clips)
+    _, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips=args.no_clips, cross_subject=args.cross_subject)
 
     model = create_model(args)
 
