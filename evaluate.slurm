@@ -15,17 +15,30 @@ module load anaconda/anaconda3
 module load cuda/cuda-11.0
 source activate cv-arushi
 
-echo "NTUARD_SUPERVISED_TRAININGi3d1616_False_clips_3_gru_True"
-python eval_script.py --dataset ntuard --arch i3d --batch-size 32 --num-class 60 --no-clips 3 --modeldir ./results/NTUARD_SUPERVISED_TRAININGi3d1616_False_clips_3_gru_True --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135 --use-gru
+echo "Cross View - Pretrained"
+echo "NTUARD_SUPERVISED_TRAININGresnet3D181616_True_clips_3_gru_False_CS_False"
+python eval_script.py --dataset ntuard --arch resnet3D18 --batch-size 32 --num-class 60 --no-clips 3 --modeldir ./results/NTUARD_SUPERVISED_TRAININGresnet3D181616_True_clips_3_gru_False_CS_False --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135
 
+echo "NTUARD_SUPERVISED_TRAININGi3d1616_True_clips_3_gru_False_CS_False"
+python eval_script.py --dataset ntuard --arch i3d --batch-size 32 --no-clips 3 --num-class 60 --modeldir ./results/NTUARD_SUPERVISED_TRAININGi3d1616_True_clips_3_gru_False_CS_False --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135
 
-echo "NTUARD_SUPERVISED_TRAININGresnet3D181616_False_clips_3"
-python eval_script.py --dataset ntuard --arch resnet3D18 --batch-size 32 --no-clips 3 --num-class 60 --modeldir ./results/NTUARD_SUPERVISED_TRAININGresnet3D181616_False_clips_3 --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135
-echo "NTUARD_SUPERVISED_TRAININGresnet3D181616_True_clips_3"
-python eval_script.py --dataset ntuard --arch resnet3D18 --no-clips 3 --batch-size 32 --num-class 60 --modeldir ./results/NTUARD_SUPERVISED_TRAININGresnet3D181616_True_clips_3 --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135
+echo "Cross Subject Results - Pretrained"
+echo "NTUARD_SUPERVISED_TRAININGresnet3D181616_True_clips_3_gru_False_CS_True"
+python eval_script.py --cross-subject --dataset ntuard --arch resnet3D18 --batch-size 32 --num-class 60 --no-clips 3 --modeldir ./results/NTUARD_SUPERVISED_TRAININGresnet3D181616_True_clips_3_gru_False_CS_True --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135
 
-echo "NTUARD_SUPERVISED_TRAININGi3d832_False_clips_3"
-python eval_script.py --dataset ntuard --arch i3d --batch-size 32 --num-class 60 --no-clips 3 --modeldir ./results/NTUARD_SUPERVISED_TRAININGi3d832_False_clips_3 --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135
-echo "NTUARD_SUPERVISED_TRAININGi3d832_True_clips_3"
-python eval_script.py --dataset ntuard --arch i3d --batch-size 32 --num-class 60 --no-clips 3 --modeldir ./results/NTUARD_SUPERVISED_TRAININGi3d832_True_clips_3 --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135
+echo "NTUARD_SUPERVISED_TRAININGi3d1616_True_clips_3_gru_False_CS_True"
+python eval_script.py --cross-subject --dataset ntuard --arch i3d --batch-size 32 --no-clips 3 --num-class 60 --modeldir ./results/NTUARD_SUPERVISED_TRAININGi3d1616_True_clips_3_gru_False_CS_True --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135
 
+echo "Cross View "
+echo "NTUARD_SUPERVISED_TRAININGresnet3D181616_False_clips_3_gru_False_CS_False"
+python eval_script.py --dataset ntuard --arch resnet3D18 --no-clips 3 --batch-size 32 --num-class 60 --modeldir ./results/NTUARD_SUPERVISED_TRAININGresnet3D181616_False_clips_3_gru_False_CS_False --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135
+
+echo "NTUARD_SUPERVISED_TRAININGi3d1616_False_clips_3_gru_False_CS_False"
+python eval_script.py --dataset ntuard --arch i3d --batch-size 32 --num-class 60 --no-clips 3 --modeldir ./results/NTUARD_SUPERVISED_TRAININGi3d1616_False_clips_3_gru_False_CS_False --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135
+
+echo "Cross Subject Results"
+echo "NTUARD_SUPERVISED_TRAININGresnet3D181616_False_clips_3_gru_False_CS_True"
+python eval_script.py --cross-subject --dataset ntuard --arch resnet3D18 --batch-size 32 --num-class 60 --no-clips 3 --modeldir ./results/NTUARD_SUPERVISED_TRAININGresnet3D181616_False_clips_3_gru_False_CS_True --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135
+
+echo "NTUARD_SUPERVISED_TRAININGi3d1616_False_clips_3_gru_False_CS_True"
+python eval_script.py --cross-subject --dataset ntuard --arch i3d --batch-size 32 --no-clips 3 --num-class 60 --modeldir ./results/NTUARD_SUPERVISED_TRAININGi3d1616_False_clips_3_gru_False_CS_True --num-workers 16 --frames-path /datasets/NTU-ARD/frames-240x135
