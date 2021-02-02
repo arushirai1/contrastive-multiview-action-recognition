@@ -38,7 +38,7 @@ class ContrastiveDataset(Dataset):
         video_dict, video_label = self.video_paths[idx], self.targets[idx]
         positives = []
         for view_dict in video_dict.keys():
-            video = self.get_video(view_dict)
+            video = self.get_video(video_dict[view_dict])
             positives.append(video)
         return torch.stack(positives), video_label-1
 
