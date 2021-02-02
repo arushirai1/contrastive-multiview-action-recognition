@@ -8,7 +8,7 @@ class ContrastiveModel(nn.Module):
     def build_mlp(self, fc):
         in_features = fc.in_features
         hidden = nn.Linear(in_features=in_features, out_features=in_features)
-        return nn.Sequential([hidden, nn.ReLU, fc])
+        return nn.Sequential(hidden, nn.ReLU, fc)
 
     def forward(self, x):
         # change shape so computation is done in parallel
