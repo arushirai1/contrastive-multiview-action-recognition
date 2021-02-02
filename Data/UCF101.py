@@ -70,8 +70,8 @@ def get_ntuard(root='Data', frames_path='/datasets/NTU-ARD/frames-240x135', num_
             Scale(136),
             CenterCrop(112),
             transforms.RandomHorizontalFlip(),
-            transforms.RandomApply(transforms.ColorJitter(0.8, 0.8, 0.8, 0.2), 0.8),
-            transforms.RandomApply(transforms.Grayscale(num_output_channels=3), 0.2),
+            transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], 0.8),
+            transforms.RandomApply([transforms.Grayscale(num_output_channels=3)], 0.2),
             transforms.GaussianBlur(112//10),
             ToTensor(1),
         ])

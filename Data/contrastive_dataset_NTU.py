@@ -73,7 +73,7 @@ class ContrastiveDataset(Dataset):
                 video_container.append(current_image)
 
             if self.transform is not None:
-                self.transform.randomize_parameters()
+                #self.transform.randomize_parameters()
                 clip = [self.transform(img) for img in video_container] #[transforms.functional.normalize(self.transform(img), normal_mean, normal_std) for img in video_container]
             clip = torch.stack(clip, 0).permute(1, 0, 2, 3)
             clips.append(clip)
