@@ -22,6 +22,7 @@ from Data.UCF101 import get_ucf101, get_ntuard
 from utils import AverageMeter, accuracy
 from models.contrastive_model import ContrastiveModel
 import math
+from loss import normalized_temp_cross_entropy_loss
 from torch.cuda.amp import autocast, GradScaler
 
 DATASET_GETTERS = {'ucf101': get_ucf101, 'ntuard': get_ntuard}
@@ -221,7 +222,7 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
 
         with autocast():
             logits_x = model(inputs)
-            logits, labels = loss.normalized_temp_cross_entropy_loss(logits_x)
+            logits, labels = normalized_temp_cross_entropy_loss(logits_x)
             labels = labels.to(args.device)
             loss = F.cross_entropy(logits, labels, reduction='mean')
 
