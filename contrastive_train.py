@@ -136,7 +136,7 @@ def main_training_testing(EXP_NAME):
     os.makedirs(out_dir, exist_ok=True)
     writer = SummaryWriter(out_dir)
 
-    train_dataset, _ = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips)
+    train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips)
 
     model = ContrastiveModel(_init_backbone, args.feature_size)
     model.to(args.device)
