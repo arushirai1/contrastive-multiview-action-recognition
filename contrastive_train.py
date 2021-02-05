@@ -223,8 +223,8 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
         with autocast():
             logits_x = model(inputs)
             logits, labels = normalized_temp_cross_entropy_loss(logits_x)
-            labels = labels.to(args.device)
-            loss = F.cross_entropy(logits, labels, reduction='mean')
+        labels = labels.type(torch.LongTensor).to(args.device)
+        loss = F.cross_entropy(logits, labels, reduction='mean')
 
         # Scales the loss, and calls backward()
         # to create scaled gradients
@@ -244,7 +244,7 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
         end = time.time()
         if not args.no_progress:
             p_bar.set_description(
-                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}\n".format(
+                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}.\n".format(
                     epoch=epoch + 1,
                     epochs=args.epochs,
                     batch=batch_idx + 1,
