@@ -40,7 +40,7 @@ class ContrastiveDataset(Dataset):
         for view_dict in video_dict.keys():
             video = self.get_video(video_dict[view_dict])
             positives.append(video)
-        return torch.stack(positives), video_label-1
+        return positives, video_label-1
 
     def get_video(self, video_dict):
         no_frames = video_dict['no_frames']-1

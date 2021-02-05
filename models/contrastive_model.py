@@ -12,7 +12,7 @@ class ContrastiveModel(nn.Module):
 
     def forward(self, x):
         # change shape so computation is done in parallel
-        x = x.view(x.shape[0]*x.shape[1], x.shape[2], x.shape[3], x.shape[4], x.shape[5], x.shape[6])
+        #x = x.view(x.shape[0]*x.shape[1], x.shape[2], x.shape[3], x.shape[4], x.shape[5], x.shape[6])
         return self.base_model(x)
 
     def get_repr(self, x):

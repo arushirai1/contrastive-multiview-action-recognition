@@ -22,7 +22,7 @@ from Data.UCF101 import get_ucf101, get_ntuard
 from utils import AverageMeter, accuracy
 from models.contrastive_model import ContrastiveModel
 import math
-from loss import normalized_temp_cross_entropy_loss
+from loss import normalized_temp_cross_entropy_loss, info_nce_loss
 from torch.cuda.amp import autocast, GradScaler
 
 DATASET_GETTERS = {'ucf101': get_ucf101, 'ntuard': get_ntuard}
@@ -58,6 +58,21 @@ def get_cosine_schedule_with_warmup(optimizer,
 
     return LambdaLR(optimizer, _lr_lambda, last_epoch)
 
+def accuracy(output, target, topk=(1,)):
+    """Computes the accuracy over the k top predictions for the specified values of k"""
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
+
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t()
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+        res = []
+        for k in topk:
+            correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0 / batch_size))
+        return res
 
 def main_training_testing(EXP_NAME):
     parser = argparse.ArgumentParser(description='PyTorch Contrastive Training')
@@ -107,7 +122,7 @@ def main_training_testing(EXP_NAME):
     args = parser.parse_args()
     print(args)
     EXP_NAME += str(args.backbone) + str(args.num_workers) + str(args.batch_size) + '_' + str(
-        args.pretrained) + '_clips_' + str(args.no_clips) + '_gru_' + str(args.use_gru)
+        args.pretrained) + '_clips_' + str(args.no_clips) + '_lr_' + str(args.lr)
     print(EXP_NAME)
     out_dir = os.path.join(args.out, EXP_NAME)
 
@@ -206,6 +221,8 @@ def main_training_testing(EXP_NAME):
 def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
     losses = AverageMeter()
     end = time.time()
 
@@ -217,19 +234,22 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
     scaler = GradScaler() # rescale the loss to get gradients when using autocast
     for batch_idx, (inputs_x, _) in enumerate(train_loader):
         data_time.update(time.time() - end)
-
+        inputs_x = torch.cat(inputs_x, dim=0)
         inputs = inputs_x.to(args.device)
 
         with autocast():
             logits_x = model(inputs)
-            logits, labels = normalized_temp_cross_entropy_loss(logits_x)
+            logits, labels = info_nce_loss(logits_x)
         labels = labels.type(torch.LongTensor).to(args.device)
         loss = F.cross_entropy(logits, labels, reduction='mean')
+        batch_top1, batch_top5 = accuracy(logits, labels, topk=(1, 5))
 
         # Scales the loss, and calls backward()
         # to create scaled gradients
         scaler.scale(loss).backward()
         losses.update(loss.item())
+        top1.update(batch_top1)
+        top5.update(batch_top5)
 
         # Unscales gradients and calls
         # or skips optimizer.step() if nan or inf TODO:check if there is a callback if this happens/end train
@@ -242,9 +262,10 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
 
         batch_time.update(time.time() - end)
         end = time.time()
+
         if not args.no_progress:
             p_bar.set_description(
-                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}.\n".format(
+                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Acc: {acc:.4}\n".format(
                     epoch=epoch + 1,
                     epochs=args.epochs,
                     batch=batch_idx + 1,
@@ -252,7 +273,8 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
                     lr=scheduler.get_lr()[0],
                     data=data_time.avg,
                     bt=batch_time.avg,
-                    loss=losses.avg))
+                    loss=losses.avg,
+                    acc=top1.avg))
             p_bar.update()
     if not args.no_progress:
         p_bar.close()

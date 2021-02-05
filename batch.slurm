@@ -5,7 +5,7 @@
 #SBATCH --mem-per-cpu=16gb
 #SBATCH --gres-flags=enforce-binding   # Insist on good CPU/GPU alignment
 #SBATCH --gres=gpu:1                   # And two GPU
-#SBATCH --time=1:00:00              # Run for 1 hours, at most
+#SBATCH --time=24:00:00              # Run for 1 hours, at most
 #SBATCH --job-name=contrastive-multiview-action              # Name the job so I can see it in squeue
 #SBATCH --output=cross-subject-i3d-%J.out
 #SBATCH --mail-type=BEGIN,END,FAIL     # Send me email for various states
