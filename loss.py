@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 
 
-def info_nce_loss(features, batch_size, views, temperature):
+def info_nce_loss(features, batch_size, views, temperature=0.05):
     '''
     Credit to Thalles Silva - https://github.com/sthalles/SimCLR/blob/master/simclr.py
     :param features:

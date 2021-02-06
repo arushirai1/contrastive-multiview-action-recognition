@@ -95,6 +95,8 @@ def main_training_testing(EXP_NAME):
                         help='train batchsize')
     parser.add_argument('--no-clips', default=1, type=int,
                         help='number of clips')
+    parser.add_argument('--no-views', default=2, type=int,
+                        help='number of views (positives+1)')
     parser.add_argument('--feature-size', default=128, type=int,
                         help='size of feature embedding')
     parser.add_argument('--lr', '--learning-rate', default=0.03, type=float,
@@ -239,7 +241,7 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
 
         with autocast():
             logits_x = model(inputs)
-            logits, labels = info_nce_loss(logits_x)
+            logits, labels = info_nce_loss(logits_x, args.batch_size, args.no_views)
         labels = labels.type(torch.LongTensor).to(args.device)
         loss = F.cross_entropy(logits, labels, reduction='mean')
         batch_top1, batch_top5 = accuracy(logits, labels, topk=(1, 5))
