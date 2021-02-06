@@ -40,22 +40,3 @@ def info_nce_loss(features, batch_size, views, temperature=0.05):
 
     logits = logits / temperature
     return logits, labels
-
-def normalized_temp_cross_entropy_loss(Y, temp=0.05, num_positive=1):
-    '''
-    :param Y:
-    :param temp:
-    :param num_positive:
-    :return:
-    '''
-    #th.norm(Y)
-    #n_Y = F.normalize(Y, dim=1)
-    #verify n_Y.shape[0]%num_positive = 0
-
-    #reshape such that augmented views are at the end of the tensor, rather than alternating
-    Y = Y.view((-1,2,Y.shape[1])) # (batch_size, views including anchor, features)
-    batch_size = Y.shape[0]
-    #shape (batch size, feature_size)
-    features= th.stack([tsr.squeeze(1) for tsr in th.split(Y, 1, dim=1)]).squeeze(2).squeeze(0) #returns a tensor for each item in pair
-    features = features.view(-1,features.shape[-1])
-    return info_nce_loss(features, features.shape[0], num_positive, temp)

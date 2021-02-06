@@ -22,7 +22,7 @@ from Data.UCF101 import get_ucf101, get_ntuard
 from utils import AverageMeter, accuracy
 from models.contrastive_model import ContrastiveModel
 import math
-from loss import normalized_temp_cross_entropy_loss, info_nce_loss
+from loss import info_nce_loss
 from torch.cuda.amp import autocast, GradScaler
 
 DATASET_GETTERS = {'ucf101': get_ucf101, 'ntuard': get_ntuard}
@@ -72,7 +72,7 @@ def accuracy(output, target, topk=(1,)):
         for k in topk:
             correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
-        return res
+        return tuple(res)
 
 def main_training_testing(EXP_NAME):
     parser = argparse.ArgumentParser(description='PyTorch Contrastive Training')
@@ -250,9 +250,8 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
         # to create scaled gradients
         scaler.scale(loss).backward()
         losses.update(loss.item())
-        top1.update(batch_top1)
-        top5.update(batch_top5)
-
+        top1.update(batch_top1[0])
+        top5.update(batch_top5[0])
         # Unscales gradients and calls
         # or skips optimizer.step() if nan or inf TODO:check if there is a callback if this happens/end train
         scaler.step(optimizer)
@@ -267,7 +266,7 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
 
         if not args.no_progress:
             p_bar.set_description(
-                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Acc: {acc:.4}\n".format(
+                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}\n".format(
                     epoch=epoch + 1,
                     epochs=args.epochs,
                     batch=batch_idx + 1,
