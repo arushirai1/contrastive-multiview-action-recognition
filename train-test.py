@@ -118,17 +118,25 @@ def main_training_testing(EXP_NAME):
     best_acc_2 = 0
 
     def create_model(args):
-        if args.arch == 'resnet3D18' or args.args == 'contrastive':
+        if args.arch == 'resnet3D18':
             import models.video_resnet as models
-            base_model = models.r3d_18(num_classes=args.num_class, pretrained=args.pretrained)
+            model = models.r3d_18(num_classes=args.num_class, pretrained=args.pretrained)
         elif args.arch == 'i3d':
             import models.i3d as models
-            base_model = models.i3d(num_classes=args.num_class, use_gru= args.use_gru, pretrained=args.pretrained, pretrained_path='./models/rgb_imagenet.pt')
+            model = models.i3d(num_classes=args.num_class, use_gru= args.use_gru, pretrained=args.pretrained, pretrained_path='./models/rgb_imagenet.pt')
+        return model
+
+    def init_contrastive(args):
+        # only supporting resnet3d, TODO: Add support for i3d
+        def _init_backbone(num_classes):
+            args.num_class = num_classes
+            return create_model(args)
 
         if args.arch == 'contrastive':
             import models.contrastive_model as models
-            model = models.ContrastiveModel(lambda x: base_model, num_classes=args.feature_size)
-
+            args.arch = 'resnet3D18'
+            model = models.ContrastiveModel(_init_backbone, repr_size=args.feature_size)
+            args.arch = 'contrastive'
         return model
     
     device = torch.device('cuda', args.gpu_id)
@@ -144,7 +152,7 @@ def main_training_testing(EXP_NAME):
 
     train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips = args.no_clips, cross_subject = args.cross_subject)
 
-    model = create_model(args)
+    model = create_model(args) if args.arch != 'contrastive' else init_contrastive(args)
     if args.arch == 'contrastive':
         ### load weights
         assert os.path.isfile(

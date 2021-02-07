@@ -235,22 +235,21 @@ class VideoResNet(nn.Module):
                     nn.init.constant_(m.bn3.weight, 0)
 
     def extract_representation(self, x):
-        def forward(self, x):
-            clips = x.shape[1]
-            x = x.view(-1, 3, 8, 112, 112)
-            x = self.stem(x)
+        clips = x.shape[1]
+        x = x.view(-1, 3, 8, 112, 112)
+        x = self.stem(x)
 
-            x = self.layer1(x)
-            x = self.layer2(x)
-            x = self.layer3(x)
-            x = self.layer4(x)
-            x = self.avgpool(x)
-            # Flatten the layer to fc
-            x = x.flatten(1)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.avgpool(x)
+        # Flatten the layer to fc
+        x = x.flatten(1)
 
-            x = x.view(-1, clips, 512)
-            x = (torch.sum(x, dim=1) / clips)
-            return x
+        x = x.view(-1, clips, 512)
+        x = (torch.sum(x, dim=1) / clips)
+        return x
 
     def forward(self, x):
         clips=x.shape[1]
