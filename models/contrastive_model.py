@@ -13,7 +13,7 @@ class ContrastiveModel(nn.Module):
         # copy layers from MLP depending on endpoint
         layers = []
         if endpoint == 'A':
-            in_features = self.base_model.fc.in_features
+            in_features = self.base_model.fc[0].in_features
         elif endpoint == 'B':
             layers.append(self.base_model.fc[0])
             in_features = self.base_model.fc[0].out_features
