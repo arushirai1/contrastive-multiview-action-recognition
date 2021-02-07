@@ -74,6 +74,8 @@ def evaluate():
                         help='dataset name')
     parser.add_argument('--use-gru', action='store_true', default=False,
                         help='use gru')
+    parser.add_argument('--feature-size', default=128, type=int,
+                        help='size of feature embedding')
     parser.add_argument('--cross-subject', action='store_true', default=False,
                         help='Training and testing on cross subject split')
     parser.add_argument('--batch-size', default=64, type=int,

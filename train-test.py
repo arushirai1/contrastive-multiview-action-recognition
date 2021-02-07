@@ -64,7 +64,7 @@ def main_training_testing(EXP_NAME):
     parser.add_argument('--dataset', default='ucf101', type=str,
                         help='dataset name')
     parser.add_argument('--arch', default='resnet3D18', type=str,
-                        help='dataset name')
+                        help='model name')
     parser.add_argument('--epochs', default=300, type=int,
                         help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int,
@@ -87,6 +87,8 @@ def main_training_testing(EXP_NAME):
                         help='use pretrained version')
     parser.add_argument('--use-gru', action='store_true', default=False,
                         help='use gru')
+    parser.add_argument('--feature-size', default=128, type=int,
+                        help='size of feature embedding')
     parser.add_argument('--cross-subject', action='store_true', default=False,
                         help='Training and testing on cross subject split')
     parser.add_argument('--resume', default='', type=str,help='path to latest checkpoint (default: none)')
@@ -98,22 +100,35 @@ def main_training_testing(EXP_NAME):
                         help="For distributed training: local_rank")
     parser.add_argument('--num-class', default=101, type=int,
                         help='total classes')
+    parser.add_argument('--finetune', action='store_true', default=False,
+                        help='select method of eval: finetune (True) or linear probe (False)')
+    parser.add_argument('--endpoint', default='B', type=str,
+                        help='the layer the representation is extracted from from')
 
     args = parser.parse_args()
     print(args)
-    EXP_NAME+=str(args.arch) + str(args.num_workers)+str(args.batch_size)+'_'+str(args.pretrained)+'_clips_'+str(args.no_clips)+'_gru_'+str(args.use_gru)+'_CS_'+str(args.cross_subject)
+    if args.arch == 'contrastive':
+        EXP_NAME = str(args.arch) +"_endpoint_"+str(args.endpoint)+"_finetune_"+str(args.finetune)
+    else:
+        EXP_NAME+=str(args.arch) + str(args.num_workers)+str(args.batch_size)+'_'+str(args.pretrained)+'_clips_'+str(args.no_clips)+'_gru_'+str(args.use_gru)+'_CS_'+str(args.cross_subject)
+
     print(EXP_NAME)
     out_dir=os.path.join(args.out, EXP_NAME)
     best_acc = 0
     best_acc_2 = 0
 
     def create_model(args):
-        if args.arch == 'resnet3D18':
+        if args.arch == 'resnet3D18' or args.args == 'contrastive':
             import models.video_resnet as models
-            model = models.r3d_18(num_classes=args.num_class, pretrained=args.pretrained)
+            base_model = models.r3d_18(num_classes=args.num_class, pretrained=args.pretrained)
         elif args.arch == 'i3d':
             import models.i3d as models
-            model = models.i3d(num_classes=args.num_class, use_gru= args.use_gru, pretrained=args.pretrained, pretrained_path='./models/rgb_imagenet.pt')
+            base_model = models.i3d(num_classes=args.num_class, use_gru= args.use_gru, pretrained=args.pretrained, pretrained_path='./models/rgb_imagenet.pt')
+
+        if args.arch == 'contrastive':
+            import models.contrastive_model as models
+            model = models.ContrastiveModel(lambda x: base_model, num_classes=args.feature_size)
+
         return model
     
     device = torch.device('cuda', args.gpu_id)
@@ -130,6 +145,13 @@ def main_training_testing(EXP_NAME):
     train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips = args.no_clips, cross_subject = args.cross_subject)
 
     model = create_model(args)
+    if args.arch == 'contrastive':
+        ### load weights
+        assert os.path.isfile(
+            args.resume), "Error: no checkpoint directory found!"
+        checkpoint = torch.load(args.resume)
+        model.load_state_dict(checkpoint['state_dict'])
+        model.eval_finetune(finetune=args.finetune, endpoint=args.endpoint, num_classes=args.num_class)
     model.to(args.device)
 
     args.iteration = len(train_dataset) // args.batch_size // args.world_size
@@ -156,7 +178,7 @@ def main_training_testing(EXP_NAME):
     scheduler = get_cosine_schedule_with_warmup(
         optimizer, args.warmup * args.iteration, args.total_steps)
 
-    if args.resume:
+    if args.resume and args.arch != 'contrastive':
         assert os.path.isfile(
             args.resume), "Error: no checkpoint directory found!"
         out_dir = os.path.dirname(args.resume)
