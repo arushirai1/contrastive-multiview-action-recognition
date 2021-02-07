@@ -108,7 +108,7 @@ def main_training_testing(EXP_NAME):
     args = parser.parse_args()
     print(args)
     if args.arch == 'contrastive':
-        EXP_NAME = str(args.arch) +"_endpoint_"+str(args.endpoint)+"_finetune_"+str(args.finetune)
+        EXP_NAME = str(args.arch) +"_endpoint_"+str(args.endpoint)+"_finetune_"+str(args.finetune)+str(args.cross_subject)
     else:
         EXP_NAME+=str(args.arch) + str(args.num_workers)+str(args.batch_size)+'_'+str(args.pretrained)+'_clips_'+str(args.no_clips)+'_gru_'+str(args.use_gru)+'_CS_'+str(args.cross_subject)
 
