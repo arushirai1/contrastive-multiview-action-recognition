@@ -54,7 +54,7 @@ def get_cosine_schedule_with_warmup(optimizer,
     return LambdaLR(optimizer, _lr_lambda, last_epoch)
 
 
-def main_training_testing(EXP_NAME):
+def main_training_testing():
     parser = argparse.ArgumentParser(description='PyTorch Classification Training')
     parser.add_argument('--out', default='results', help='directory to output the result')
     parser.add_argument('--gpu-id', default='0', type=int,
@@ -131,12 +131,12 @@ def main_training_testing(EXP_NAME):
     def init_contrastive(args):
         # only supporting resnet3d, TODO: Add support for i3d
         def _init_backbone(num_classes):
-            import video_resnet from models
+            from models import video_resnet
             model = video_resnet.r3d_18(num_classes=num_classes, pretrained=args.pretrained)
             return model
 
         if args.arch == 'contrastive':
-            import contrastive_model from models
+            from models import contrastive_model
             args.arch = 'resnet3D18'
             model = contrastive_model.ContrastiveModel(_init_backbone, repr_size=args.feature_size)
             args.arch = 'contrastive'
