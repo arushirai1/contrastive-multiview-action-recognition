@@ -126,7 +126,7 @@ def main_training_testing(EXP_NAME):
     args = parser.parse_args()
     print(args)
     EXP_NAME += str(args.backbone) + str(args.num_workers) + str(args.batch_size) + '_' + str(
-        args.pretrained) + '_clips_' + str(args.no_clips) + '_lr_' + str(args.lr)
+        args.pretrained) + '_clips_' + str(args.no_clips) + '_lr_' + str(args.lr)+'augment'+str(args.augment)
     print(EXP_NAME)
     out_dir = os.path.join(args.out, EXP_NAME)
 
