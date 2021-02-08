@@ -6,30 +6,35 @@ class ContrastiveModel(nn.Module):
         self.base_model.fc = self.build_mlp(self.base_model.fc)
         self.eval_mode = False
 
+    def get_layers(self, endpoint='C', num_classes=60):
+        layers = []
+        in_features = self.base_model.fc[0].in_features
+        if endpoint != 'A':
+            layers.append(self.base_model.fc[0])
+            in_features = self.base_model.fc[0].out_features
+            if endpoint != 'B':
+                layers.append(self.base_model.fc[1])  # ReLU
+                layers.append(self.base_model.fc[2])
+                in_features = self.base_model.fc[2].out_features
+
+        # add a final classifying layer
+        layers.append(nn.Linear(in_features, num_classes))
+        return layers
+
     def eval_finetune(self, finetune=False, endpoint='C', num_classes=60):
         self.eval_mode=True
         self.finetune = finetune
 
         # copy layers from MLP depending on endpoint
-        layers = []
-        if endpoint == 'A':
-            in_features = self.base_model.fc[0].in_features
-        elif endpoint == 'B':
-            layers.append(self.base_model.fc[0])
-            in_features = self.base_model.fc[0].out_features
-        elif endpoint == 'C':
-            layers.append(self.base_model.fc[1])  # ReLU
-            layers.append(self.base_model.fc[2])
-            in_features = self.base_model.fc[2].out_features
-
-        # add a final classifying layer
-        layers.append(nn.Linear(in_features, num_classes))
+        layers = self.get_layers(endpoint, num_classes)
 
         if not finetune:
             # if linear probe - freeze base_model layers
-            self.base_model.requires_grad = False
+            for param in self.base_model.parameters():
+                param.requires_grad = False
         self.classifier = nn.Sequential(*layers)
-        self.classifier.requires_grad = True
+        for param in self.classifier.parameters():
+            param.requires_grad = True
 
     def build_mlp(self, fc):
         in_features = fc.in_features

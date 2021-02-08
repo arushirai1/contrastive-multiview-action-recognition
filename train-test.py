@@ -65,6 +65,8 @@ def main_training_testing(EXP_NAME):
                         help='dataset name')
     parser.add_argument('--arch', default='resnet3D18', type=str,
                         help='model name')
+    parser.add_argument('--exp-name', default='NTUARD_SUPERVISED_TRAINING', type=str,
+                        help='Experiment name')
     parser.add_argument('--epochs', default=300, type=int,
                         help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int,
@@ -110,7 +112,7 @@ def main_training_testing(EXP_NAME):
     if args.arch == 'contrastive':
         EXP_NAME = str(args.arch) +"_endpoint_"+str(args.endpoint)+"_finetune_"+str(args.finetune)+str(args.cross_subject)
     else:
-        EXP_NAME+=str(args.arch) + str(args.num_workers)+str(args.batch_size)+'_'+str(args.pretrained)+'_clips_'+str(args.no_clips)+'_gru_'+str(args.use_gru)+'_CS_'+str(args.cross_subject)
+        EXP_NAME = args.exp_name + str(args.arch) + str(args.num_workers)+str(args.batch_size)+'_'+str(args.pretrained)+'_clips_'+str(args.no_clips)+'_gru_'+str(args.use_gru)+'_CS_'+str(args.cross_subject)
 
     print(EXP_NAME)
     out_dir=os.path.join(args.out, EXP_NAME)
@@ -129,13 +131,14 @@ def main_training_testing(EXP_NAME):
     def init_contrastive(args):
         # only supporting resnet3d, TODO: Add support for i3d
         def _init_backbone(num_classes):
-            args.num_class = num_classes
-            return create_model(args)
+            import video_resnet from models
+            model = video_resnet.r3d_18(num_classes=num_classes, pretrained=args.pretrained)
+            return model
 
         if args.arch == 'contrastive':
-            import models.contrastive_model as models
+            import contrastive_model from models
             args.arch = 'resnet3D18'
-            model = models.ContrastiveModel(_init_backbone, repr_size=args.feature_size)
+            model = contrastive_model.ContrastiveModel(_init_backbone, repr_size=args.feature_size)
             args.arch = 'contrastive'
         return model
     
@@ -359,5 +362,4 @@ def test(args, test_loader, model, epoch):
 
 if __name__ == '__main__':
     cudnn.benchmark = True
-    EXP_NAME = 'NTUARD_SUPERVISED_TRAINING'
-    main_training_testing(EXP_NAME)
+    main_training_testing()
