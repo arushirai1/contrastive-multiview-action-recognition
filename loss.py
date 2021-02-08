@@ -12,7 +12,7 @@ def info_nce_loss(features, batch_size, views, temperature=0.05):
     :param temperature:
     :return:
     '''
-    labels = torch.cat([torch.arange(batch_size) for i in range(views)], dim=0)
+    labels = torch.cat([torch.arange(batch_size) for i in range(views)], dim=0) #TODO: replace this with true labels for supervised contrastive learning
     labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
     #labels = labels.to(self.args.device)
 

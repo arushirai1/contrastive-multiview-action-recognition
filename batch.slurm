@@ -3,6 +3,7 @@
 #SBATCH --cpus-per-task=8              # Two cores per task
 #SBATCH --ntasks=1                     # But only one task
 #SBATCH --mem-per-gpu=32gb
+#SBATCH --constraint=gpu32
 #SBATCH --gres-flags=enforce-binding   # Insist on good CPU/GPU alignment
 #SBATCH --gres=gpu:1                   # And two GPU
 #SBATCH --time=24:00:00              # Run for 1 hours, at most

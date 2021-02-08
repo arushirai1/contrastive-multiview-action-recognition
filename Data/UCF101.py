@@ -13,7 +13,6 @@ from .contrastive_dataset_NTU import ContrastiveDataset
 import pdb
 
 import torch
-
 normal_mean = (0.5, 0.5, 0.5)
 normal_std = (0.5, 0.5, 0.5)
 

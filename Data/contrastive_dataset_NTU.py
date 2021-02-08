@@ -15,10 +15,12 @@ normal_mean = (0.5, 0.5, 0.5)
 normal_std = (0.5, 0.5, 0.5)
 from torchvision import transforms
 
+import random
+
 
 
 class ContrastiveDataset(Dataset):
-    def __init__(self, root = '', fold=1, transform=None, frames_path='', num_clips=2, num_frames=8):
+    def __init__(self, root = '', fold=1, transform=None, frames_path='', num_clips=2, num_frames=8, hard_positive=False):
 
         self.num_clips = num_clips
         self.num_frames = num_frames
@@ -27,7 +29,10 @@ class ContrastiveDataset(Dataset):
         self.views = [2, 3]
 
         self.fold = fold
-        self.video_paths, self.targets = self.build_paths()
+        if hard_positive:
+            self.video_paths, self.targets = self.build_hard_positive_paths()
+        else:
+            self.video_paths, self.targets = self.build_paths()
         self.targets = np.array(self.targets)
         self.transform = transform
 
@@ -86,6 +91,36 @@ class ContrastiveDataset(Dataset):
         action = int(vid[13:16])
 
         return scene, pid, rid, action
+    def get_action_path_dict(self, dataList):
+        action_path_dict = {}
+        for x in dataList:
+            x = x.split()
+            video_name = x[0]
+            _, _, _, action = self._decrypt_vid_name(video_name.split("/")[1])
+            temp_list = action_path_dict.get(action,[])
+            temp_list.append(x)
+            action_path_dict[action] = temp_list
+        return action_path_dict
+
+    def get_positive_pairs(self, data, pairs=[]):
+        if len(data) == 1:
+            # one item will be paired with two
+            rand_index = random.randint(0, len(pairs)-1)
+            pairs.append((pairs[rand_index][0], data[0]))
+            return pairs
+        elif len(data) == 0:
+            return pairs
+        else:
+            rand_index = random.randint(0, len(data)-1)
+            pairs.append((data.pop(rand_index), data.pop(0)))
+            return self.get_positive_pairs(data, pairs)
+
+    def get_pairs(self, action_path_dict):
+        pairs = []
+        for key in action_path_dict.keys():
+            pairs_batch = self.get_positive_pairs(action_path_dict[key], [])
+            pairs.extend(pairs_batch)
+        return pairs
 
     def build_paths(self):
         data_paths = []
@@ -105,4 +140,26 @@ class ContrastiveDataset(Dataset):
                 data_paths.append(positive_pair)
         return data_paths, targets
 
-#dataset=NTUARD_TRAIN(root='',frames_path='/datasets/NTU-ARD/frames-240x135')
+    def build_hard_positive_paths(self):
+        data_paths = []
+        targets = []
+        annotation_path = os.path.join(self.root, 'ntuTrainTestList', 'train.list')
+
+        with open(annotation_path, "r") as fid:
+            dataList = fid.readlines()
+            action_path_dict = self.get_action_path_dict(dataList)
+            data_pairs = self.get_pairs(action_path_dict)
+            for pair in data_pairs:
+                _,_,_, action = self._decrypt_vid_name(pair[0][0].split("/")[1])
+                permuted_pair = [(pair[0],pair[1]), (pair[1],pair[0])] # for only two views, TODO: Generalize
+                for pair in permuted_pair:
+                    positive_pair = {}
+                    for i,view in enumerate(self.views):
+                        video_name = pair[i][0]
+                        positive_pair[view]= {'path':os.path.join(self.frames_path, video_name, str(view)), 'no_frames':int(pair[i][view])}
+                    targets.append(action)
+                    data_paths.append(positive_pair)
+        return data_paths, targets
+
+dataset=ContrastiveDataset(root='',frames_path='/datasets/NTU-ARD/frames-240x135', hard_positive=True)
+print(len(dataset.video_paths))
