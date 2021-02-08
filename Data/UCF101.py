@@ -64,20 +64,21 @@ def get_ntuard(root='Data', frames_path='/datasets/NTU-ARD/frames-240x135', num_
         CenterCrop(112),
         ToTensor(1),
     ])
+    transform_contrastive = Compose([
+        Scale(136),
+        CenterCrop(112),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], 0.8),
+        transforms.RandomApply([transforms.Grayscale(num_output_channels=3)], 0.2),
+        transforms.GaussianBlur(112 // 10),
+        ToTensor(1),
+    ])
 
     if contrastive:
-        transform_contrastive = Compose([
-            Scale(136),
-            CenterCrop(112),
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], 0.8),
-            transforms.RandomApply([transforms.Grayscale(num_output_channels=3)], 0.2),
-            transforms.GaussianBlur(112//10),
-            ToTensor(1),
-        ])
         contrastive_dataset = ContrastiveDataset(root=root, fold=1, transform=transform_contrastive, num_clips=num_clips, frames_path=frames_path)
         return contrastive_dataset
 
+    transform_train = transform_val = transform_contrastive
     train_dataset = NTUARD_TRAIN(root=root, train=True, fold=1, cross_subject=cross_subject, transform=transform_train, num_clips=num_clips, frames_path=frames_path)
     test_dataset = NTUARD_TRAIN(root=root, train=False, fold=1, cross_subject=cross_subject, transform=transform_val, num_clips=num_clips, frames_path=frames_path)
 
