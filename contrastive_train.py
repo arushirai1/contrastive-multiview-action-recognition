@@ -111,6 +111,8 @@ def main_training_testing(EXP_NAME):
                         help='use pretrained version')
     parser.add_argument('--use-gru', action='store_true', default=False,
                         help='use gru')
+    parser.add_argument('--augment', action='store_true', default=False,
+                        help='use augmentations defined in simclr')
     parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint (default: none)')
     parser.add_argument('--seed', type=int, default=-1,
                         help="random seed (-1: don't use random seed)")
@@ -154,7 +156,7 @@ def main_training_testing(EXP_NAME):
     os.makedirs(out_dir, exist_ok=True)
     writer = SummaryWriter(out_dir)
 
-    train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips)
+    train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips, augment=args.augment)
 
     model = ContrastiveModel(_init_backbone, args.feature_size)
     model.to(args.device)
