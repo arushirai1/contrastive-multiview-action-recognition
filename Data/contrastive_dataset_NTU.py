@@ -161,5 +161,5 @@ class ContrastiveDataset(Dataset):
                     data_paths.append(positive_pair)
         return data_paths, targets
 
-dataset=ContrastiveDataset(root='',frames_path='/datasets/NTU-ARD/frames-240x135', hard_positive=True)
-print(len(dataset.video_paths))
+#dataset=ContrastiveDataset(root='',frames_path='/datasets/NTU-ARD/frames-240x135', hard_positive=True)
+#print(len(dataset.video_paths))
