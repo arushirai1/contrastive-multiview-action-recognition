@@ -198,7 +198,7 @@ def main_training_testing(EXP_NAME):
     for epoch in range(args.start_epoch, args.epochs):
 
         train_loss = train(args, train_loader, model, optimizer, scheduler, epoch)
-        writer.add_scalar('train/1.train_loss', train_loss, epoch)
+        writer.add_scalar('Loss/train', train_loss, epoch)
         is_best = min_train_loss > train_loss
         min_train_loss = train_loss if is_best else min_train_loss
 

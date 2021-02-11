@@ -1,0 +1,10 @@
+*/*.out
+*.out
+local.py
+*.pickle
+todo_experiments
+.DS_Store
+archive
+.ipynb_checkpoints
+*.ipynb
+endpointVIZ
