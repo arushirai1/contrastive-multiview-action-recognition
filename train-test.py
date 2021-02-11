@@ -7,7 +7,7 @@ import shutil
 import time
 from copy import deepcopy
 from collections import OrderedDict
-import pickle 
+import pickle
 import scipy
 import numpy as np
 import torch
@@ -23,12 +23,13 @@ from utils import AverageMeter, accuracy
 
 DATASET_GETTERS = {'ucf101': get_ucf101, 'ntuard': get_ntuard}
 
+
 def save_checkpoint(state, is_best, checkpoint):
-    filename=f'checkpoint.pth.tar'
+    filename = f'checkpoint.pth.tar'
     filepath = os.path.join(checkpoint, filename)
     torch.save(state, filepath)
     if is_best:
-        shutil.copyfile(filepath, os.path.join(checkpoint,f'model_best.pth.tar'))
+        shutil.copyfile(filepath, os.path.join(checkpoint, f'model_best.pth.tar'))
 
 
 def set_seed(args):
@@ -42,13 +43,13 @@ def set_seed(args):
 def get_cosine_schedule_with_warmup(optimizer,
                                     num_warmup_steps,
                                     num_training_steps,
-                                    num_cycles=7./16.,
+                                    num_cycles=7. / 16.,
                                     last_epoch=-1):
     def _lr_lambda(current_step):
         if current_step < num_warmup_steps:
             return float(current_step) / float(max(1, num_warmup_steps))
         no_progress = float(current_step - num_warmup_steps) / \
-            float(max(1, num_training_steps - num_warmup_steps))
+                      float(max(1, num_training_steps - num_warmup_steps))
         return max(0., math.cos(math.pi * num_cycles * no_progress))
 
     return LambdaLR(optimizer, _lr_lambda, last_epoch)
@@ -93,7 +94,7 @@ def main_training_testing():
                         help='size of feature embedding')
     parser.add_argument('--cross-subject', action='store_true', default=False,
                         help='Training and testing on cross subject split')
-    parser.add_argument('--resume', default='', type=str,help='path to latest checkpoint (default: none)')
+    parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint (default: none)')
     parser.add_argument('--seed', type=int, default=-1,
                         help="random seed (-1: don't use random seed)")
     parser.add_argument('--no-progress', action='store_true',
@@ -106,16 +107,22 @@ def main_training_testing():
                         help='select method of eval: finetune (True) or linear probe (False)')
     parser.add_argument('--endpoint', default='B', type=str,
                         help='the layer the representation is extracted from from')
+    parser.add_argument('--augment', action='store_true', default=False,
+                        help='use augmentations defined in simclr')
 
     args = parser.parse_args()
     print(args)
+
     if args.arch == 'contrastive':
-        EXP_NAME = str(args.arch) +"_endpoint_"+str(args.endpoint)+"_finetune_"+str(args.finetune)+str(args.cross_subject)
+        EXP_NAME = args.exp_name + str(args.arch) + "_endpoint_" + str(args.endpoint) + "_finetune_" + str(args.finetune) + str(
+            args.cross_subject)
     else:
-        EXP_NAME = args.exp_name + str(args.arch) + str(args.num_workers)+str(args.batch_size)+'_'+str(args.pretrained)+'_clips_'+str(args.no_clips)+'_gru_'+str(args.use_gru)+'_CS_'+str(args.cross_subject)
+        EXP_NAME = args.exp_name + str(args.arch) + str(args.num_workers) + str(args.batch_size) + '_' + str(
+            args.pretrained) + '_clips_' + str(args.no_clips) + '_gru_' + str(args.use_gru) + '_CS_' + str(
+            args.cross_subject)
 
     print(EXP_NAME)
-    out_dir=os.path.join(args.out, EXP_NAME)
+    out_dir = os.path.join(args.out, EXP_NAME)
     best_acc = 0
     best_acc_2 = 0
 
@@ -125,23 +132,23 @@ def main_training_testing():
             model = models.r3d_18(num_classes=args.num_class, pretrained=args.pretrained)
         elif args.arch == 'i3d':
             import models.i3d as models
-            model = models.i3d(num_classes=args.num_class, use_gru= args.use_gru, pretrained=args.pretrained, pretrained_path='./models/rgb_imagenet.pt')
+            model = models.i3d(num_classes=args.num_class, use_gru=args.use_gru, pretrained=args.pretrained,
+                               pretrained_path='./models/rgb_imagenet.pt')
         return model
 
     def init_contrastive(args):
         # only supporting resnet3d, TODO: Add support for i3d
         def _init_backbone(num_classes):
             from models import video_resnet
+            print("Inside init backbone", num_classes)
             model = video_resnet.r3d_18(num_classes=num_classes, pretrained=args.pretrained)
             return model
 
         if args.arch == 'contrastive':
             from models import contrastive_model
-            args.arch = 'resnet3D18'
             model = contrastive_model.ContrastiveModel(_init_backbone, repr_size=args.feature_size)
-            args.arch = 'contrastive'
         return model
-    
+
     device = torch.device('cuda', args.gpu_id)
     args.world_size = 1
     args.n_gpu = torch.cuda.device_count()
@@ -151,9 +158,13 @@ def main_training_testing():
         set_seed(args)
 
     os.makedirs(out_dir, exist_ok=True)
+
+    # remove previous logs
+    os.system(f'rm {out_dir}/events.*')
     writer = SummaryWriter(out_dir)
 
-    train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips = args.no_clips, cross_subject = args.cross_subject)
+    train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips=args.no_clips,
+                                                                cross_subject=args.cross_subject, augment=args.augment)
 
     model = create_model(args) if args.arch != 'contrastive' else init_contrastive(args)
     if args.arch == 'contrastive':
@@ -163,10 +174,13 @@ def main_training_testing():
         checkpoint = torch.load(args.resume)
         model.load_state_dict(checkpoint['state_dict'])
         model.eval_finetune(finetune=args.finetune, endpoint=args.endpoint, num_classes=args.num_class)
+        print("Out features")
+        print(model.classifier[-1].out_features)
+
     model.to(args.device)
 
     args.iteration = len(train_dataset) // args.batch_size // args.world_size
-    train_sampler = RandomSampler 
+    train_sampler = RandomSampler
 
     train_loader = DataLoader(
         train_dataset,
@@ -184,7 +198,7 @@ def main_training_testing():
         pin_memory=True)
 
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, nesterov=args.nesterov)
-    
+
     args.total_steps = args.epochs * args.iteration
     scheduler = get_cosine_schedule_with_warmup(
         optimizer, args.warmup * args.iteration, args.total_steps)
@@ -203,16 +217,13 @@ def main_training_testing():
 
     test_accs = []
     model.zero_grad()
-    
+
     for epoch in range(args.start_epoch, args.epochs):
-     
-        train_loss = train(args, train_loader, model, optimizer, scheduler, epoch)
-        test_loss = 0.0
-        test_acc = 0.0
-        test_acc_2 = 0.0
+
+        train_loss, train_acc = train(args, train_loader, model, optimizer, scheduler, epoch)
         test_model = model
 
-        test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
+        test_loss, test_acc, _ = test(args, test_loader, test_model, epoch)
         '''
         if epoch > (args.epochs+1)/2 and epoch%30==0: 
             test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
@@ -220,15 +231,13 @@ def main_training_testing():
             test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
         '''
 
-        writer.add_scalar('train/1.train_loss', train_loss, epoch)
-        writer.add_scalar('test/1.test_acc', test_acc, epoch)
-        writer.add_scalar('test/2.test_loss', test_loss, epoch)
+        writer.add_scalar('Loss/train', train_loss, epoch)
+        writer.add_scalar('Accuracy/train', train_acc, epoch)
+        writer.add_scalar('Accuracy/test', test_acc, epoch)
+        writer.add_scalar('Loss/test', test_loss, epoch)
 
         is_best = test_acc > best_acc
         best_acc = max(test_acc, best_acc)
-
-        is_best_2 = test_acc_2 > best_acc_2
-        best_acc_2 = max(test_acc_2, best_acc_2)
 
         if args.local_rank == -1 or torch.distributed.get_rank() == 0:
             model_to_save = model.module if hasattr(model, "module") else model
@@ -243,10 +252,12 @@ def main_training_testing():
 
         test_accs.append(test_acc)
     with open(f'results/{EXP_NAME}/score_logger.txt', 'a+') as ofile:
-        ofile.write(f'Last Acc (after softmax): {test_acc}, Best Acc (after softmax): {best_acc}, Last Acc (before softmax): {test_acc_2}, Best Acc (before softmax): {best_acc_2}\n')
+        ofile.write(
+            f'Last Acc: {test_acc}, Best Acc: {best_acc}\n')
 
     if args.local_rank in [-1, 0]:
         writer.close()
+
 
 def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
@@ -257,12 +268,13 @@ def accuracy(output, target, topk=(1,)):
 
     res = []
     for k in topk:
-        count=0.0
+        count = 0.0
         for i, t in enumerate(target):
-            if t in indices[i,:k]:
-                count+=100.0 / batch_size
+            if t in indices[i, :k]:
+                count += 100.0 / batch_size
         res.append(count)
     return res
+
 
 def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
     batch_time = AverageMeter()
@@ -299,21 +311,22 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
         if not args.no_progress:
-            p_bar.set_description("Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}\n".format(
-                epoch=epoch + 1,
-                epochs=args.epochs,
-                batch=batch_idx + 1,
-                iter=args.iteration,
-                lr=scheduler.get_lr()[0],
-                data=data_time.avg,
-                bt=batch_time.avg,
-                loss=losses.avg,
-                acc=top1.avg))
+            p_bar.set_description(
+                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}\n".format(
+                    epoch=epoch + 1,
+                    epochs=args.epochs,
+                    batch=batch_idx + 1,
+                    iter=args.iteration,
+                    lr=scheduler.get_lr()[0],
+                    data=data_time.avg,
+                    bt=batch_time.avg,
+                    loss=losses.avg,
+                    acc=top1.avg))
             p_bar.update()
     if not args.no_progress:
         p_bar.close()
-    
-    return losses.avg
+
+    return losses.avg, top1.avg
 
 
 def test(args, test_loader, model, epoch):
@@ -359,6 +372,7 @@ def test(args, test_loader, model, epoch):
             test_loader.close()
 
     return losses.avg, top1.avg, top5.avg
+
 
 if __name__ == '__main__':
     cudnn.benchmark = True
