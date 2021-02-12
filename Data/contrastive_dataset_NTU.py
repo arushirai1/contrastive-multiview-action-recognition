@@ -20,13 +20,17 @@ import random
 
 
 class ContrastiveDataset(Dataset):
-    def __init__(self, root = '', fold=1, transform=None, frames_path='', num_clips=2, num_frames=8, hard_positive=False):
+    def __init__(self, root = '', fold=1, transform=None, frames_path='', num_clips=2, num_frames=8, hard_positive=False, cross_subject=False):
 
         self.num_clips = num_clips
         self.num_frames = num_frames
         self.frames_path = frames_path
         self.root = root
-        self.views = [2, 3]
+        self.cross_subject = cross_subject
+        if not cross_subject:
+            self.views=[2,3]
+        else:
+            self.views=[1,2,3]
 
         self.fold = fold
         if hard_positive:
@@ -122,10 +126,17 @@ class ContrastiveDataset(Dataset):
             pairs.extend(pairs_batch)
         return pairs
 
+    def get_annotation_path(self):
+        if self.cross_subject:
+            annotation_path = os.path.join(self.root, 'ntuTrainTestList', 'train.list')
+        else:
+            annotation_path = os.path.join(self.root, 'ntuTrainTestList', 'cross_view_split.list')
+        return annotation_path
+
     def build_paths(self):
         data_paths = []
         targets = []
-        annotation_path = os.path.join(self.root, 'ntuTrainTestList', 'train.list')
+        annotation_path = self.get_annotation_path()
 
         with open(annotation_path, "r") as fid:
             dataList = fid.readlines()
@@ -143,7 +154,7 @@ class ContrastiveDataset(Dataset):
     def build_hard_positive_paths(self):
         data_paths = []
         targets = []
-        annotation_path = os.path.join(self.root, 'ntuTrainTestList', 'train.list')
+        annotation_path = self.get_annotation_path()
 
         with open(annotation_path, "r") as fid:
             dataList = fid.readlines()

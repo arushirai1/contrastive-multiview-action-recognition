@@ -76,7 +76,7 @@ def get_ntuard(root='Data', frames_path='/datasets/NTU-ARD/frames-240x135', num_
     if contrastive:
         if not augment:
             transform_contrastive = transform_train
-        contrastive_dataset = ContrastiveDataset(root=root, fold=1, transform=transform_contrastive, num_clips=num_clips, frames_path=frames_path)
+        contrastive_dataset = ContrastiveDataset(root=root, fold=1, transform=transform_contrastive, num_clips=num_clips, frames_path=frames_path, cross_subject=cross_subject)
         return contrastive_dataset
     if augment:
         transform_train = transform_val = transform_contrastive

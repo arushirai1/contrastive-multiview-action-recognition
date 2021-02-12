@@ -8,3 +8,4 @@ archive
 .ipynb_checkpoints
 *.ipynb
 endpointVIZ
+*.slurm

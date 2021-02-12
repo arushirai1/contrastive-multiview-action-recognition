@@ -113,17 +113,23 @@ def main_training_testing(EXP_NAME):
                         help='use gru')
     parser.add_argument('--augment', action='store_true', default=False,
                         help='use augmentations defined in simclr')
+    parser.add_argument('--hard-positive', action='store_true', default=False,
+                        help='use hard positives')
     parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint (default: none)')
     parser.add_argument('--seed', type=int, default=-1,
                         help="random seed (-1: don't use random seed)")
     parser.add_argument('--no-progress', action='store_true',
                         help="don't use progress bar")
+    parser.add_argument('--cross-subject', action='store_true', default=False,
+                        help='Training and testing on cross subject split')
     parser.add_argument("--local_rank", type=int, default=-1,
                         help="For distributed training: local_rank")
     parser.add_argument('--num-class', default=101, type=int,
                         help='total classes')
 
     args = parser.parse_args()
+    if args.cross_subject and args.no_views < 3 and not args.hard_positive:
+        args.no_views = 3
     print(args)
     EXP_NAME += str(args.backbone) + str(args.num_workers) + str(args.batch_size) + '_' + str(
         args.pretrained) + '_clips_' + str(args.no_clips) + '_lr_' + str(args.lr)+'augment'+str(args.augment)
@@ -156,7 +162,7 @@ def main_training_testing(EXP_NAME):
     os.makedirs(out_dir, exist_ok=True)
     writer = SummaryWriter(out_dir)
 
-    train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips, augment=args.augment)
+    train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips, augment=args.augment, cross_subject=args.cross_subject)
 
     model = ContrastiveModel(_init_backbone, args.feature_size)
     model.to(args.device)
