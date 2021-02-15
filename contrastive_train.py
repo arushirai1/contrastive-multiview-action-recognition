@@ -24,6 +24,7 @@ from models.contrastive_model import ContrastiveModel
 import math
 from loss import info_nce_loss
 from torch.cuda.amp import autocast, GradScaler
+import pdb
 
 DATASET_GETTERS = {'ucf101': get_ucf101, 'ntuard': get_ntuard}
 
@@ -126,12 +127,14 @@ def main_training_testing(EXP_NAME):
                         help="For distributed training: local_rank")
     parser.add_argument('--num-class', default=101, type=int,
                         help='total classes')
+    parser.add_argument('--exp-name', default='NTUARD_SUPERVISED_TRAINING', type=str,
+                        help='Experiment name')
 
     args = parser.parse_args()
     if args.cross_subject and args.no_views < 3 and not args.hard_positive:
         args.no_views = 3
     print(args)
-    EXP_NAME += str(args.backbone) + str(args.num_workers) + str(args.batch_size) + '_' + str(
+    EXP_NAME = str(args.exp_name) + str(args.backbone) + str(args.num_workers) + str(args.batch_size) + '_' + str(
         args.pretrained) + '_clips_' + str(args.no_clips) + '_lr_' + str(args.lr)+'augment'+str(args.augment)
     print(EXP_NAME)
     out_dir = os.path.join(args.out, EXP_NAME)
@@ -162,7 +165,7 @@ def main_training_testing(EXP_NAME):
     os.makedirs(out_dir, exist_ok=True)
     writer = SummaryWriter(out_dir)
 
-    train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips, augment=args.augment, cross_subject=args.cross_subject)
+    train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips, augment=args.augment, cross_subject=args.cross_subject, hard_positive=args.hard_positive)
 
     model = ContrastiveModel(_init_backbone, args.feature_size)
     model.to(args.device)
@@ -242,14 +245,16 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
     train_loader = labeled_trainloader
     model.train()
     scaler = GradScaler() # rescale the loss to get gradients when using autocast
-    for batch_idx, (inputs_x, _) in enumerate(train_loader):
+    for batch_idx, (inputs_x, labels) in enumerate(train_loader):
         data_time.update(time.time() - end)
         inputs_x = torch.cat(inputs_x, dim=0)
         inputs = inputs_x.to(args.device)
+        pdb.set_trace()
+        labels = labels.to(args.device)
 
         with autocast():
             logits_x = model(inputs)
-            logits, labels = info_nce_loss(logits_x, args.batch_size, args.no_views)
+            logits, labels = info_nce_loss(logits_x, args.batch_size, args.no_views, supervised=args.hard_positive, labels=labels)
         labels = labels.type(torch.LongTensor).to(args.device)
         loss = F.cross_entropy(logits, labels, reduction='mean')
         batch_top1, batch_top5 = accuracy(logits, labels, topk=(1, 5))

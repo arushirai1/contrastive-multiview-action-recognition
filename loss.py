@@ -3,16 +3,22 @@ import torch
 import torch.nn.functional as F
 
 
-def info_nce_loss(features, batch_size, views, temperature=0.05):
+def info_nce_loss(features, batch_size, views, temperature=0.05, supervised=False, labels=None):
     '''
     Credit to Thalles Silva - https://github.com/sthalles/SimCLR/blob/master/simclr.py
+    Adapted this to supervised contrastive learning
     :param features:
     :param batch_size:
     :param views:
     :param temperature:
     :return:
     '''
-    labels = torch.cat([torch.arange(batch_size) for i in range(views)], dim=0) #TODO: replace this with true labels for supervised contrastive learning
+
+    if supervised:
+        labels = labels
+    else:
+        labels = torch.cat([torch.arange(batch_size) for i in range(views)], dim=0) #TODO: replace this with true labels for supervised contrastive learning
+
     labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
     #labels = labels.to(self.args.device)
 
