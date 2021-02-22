@@ -15,7 +15,7 @@ import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import LambdaLR
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, random_split
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from Data.UCF101 import get_ucf101, get_ntuard
@@ -76,6 +76,8 @@ def main_training_testing():
                         help='video frames path')
     parser.add_argument('--batch-size', default=64, type=int,
                         help='train batchsize')
+    parser.add_argument('--percentage', default=1.0, type=float,
+                        help='in semi-supervised setting, what split do you want to use')
     parser.add_argument('--no-clips', default=1, type=int,
                         help='number of clips')
     parser.add_argument('--lr', '--learning-rate', default=0.03, type=float,
@@ -180,7 +182,9 @@ def main_training_testing():
 
     args.iteration = len(train_dataset) // args.batch_size // args.world_size
     train_sampler = RandomSampler
-
+    print("Fully-supervised", len(train_dataset))
+    train_dataset, _ = random_split(train_dataset, (round(args.percentage*len(train_dataset)), round((1-args.percentage)*len(train_dataset))))
+    print("Semi-supervised", len(train_dataset))
     train_loader = DataLoader(
         train_dataset,
         sampler=train_sampler(train_dataset),
