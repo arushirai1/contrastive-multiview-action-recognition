@@ -123,6 +123,8 @@ def main_training_testing(EXP_NAME):
                         help="don't use progress bar")
     parser.add_argument('--cross-subject', action='store_true', default=False,
                         help='Training and testing on cross subject split')
+    parser.add_argument('--random_temporal', action='store_true', default=False,
+                        help='Training and testing on cross subject split')
     parser.add_argument("--local_rank", type=int, default=-1,
                         help="For distributed training: local_rank")
     parser.add_argument('--num-class', default=101, type=int,
@@ -165,7 +167,7 @@ def main_training_testing(EXP_NAME):
     os.makedirs(out_dir, exist_ok=True)
     writer = SummaryWriter(out_dir)
 
-    train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips, augment=args.augment, cross_subject=args.cross_subject, hard_positive=args.hard_positive)
+    train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips, augment=args.augment, cross_subject=args.cross_subject, hard_positive=args.hard_positive, random_temporal=args.random_temporal)
 
     model = ContrastiveModel(_init_backbone, args.feature_size)
     model.to(args.device)
@@ -249,12 +251,18 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
         data_time.update(time.time() - end)
         inputs_x = torch.cat(inputs_x, dim=0)
         inputs = inputs_x.to(args.device)
-        pdb.set_trace()
+        labels = torch.cat([labels for i in range(args.no_views)])
         labels = labels.to(args.device)
 
         with autocast():
             logits_x = model(inputs)
-            logits, labels = info_nce_loss(logits_x, args.batch_size, args.no_views, supervised=args.hard_positive, labels=labels)
+            '''
+            try:
+                logits, labels = info_nce_loss(logits_x, args.batch_size, args.no_views, supervised=args.hard_positive, labels=labels)
+            except Exception as e:
+            '''
+
+            logits, labels = info_nce_loss(logits_x, args.batch_size, args.no_views)
         labels = labels.type(torch.LongTensor).to(args.device)
         loss = F.cross_entropy(logits, labels, reduction='mean')
         batch_top1, batch_top5 = accuracy(logits, labels, topk=(1, 5))

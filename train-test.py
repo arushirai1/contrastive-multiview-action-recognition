@@ -125,7 +125,6 @@ def main_training_testing():
     print(EXP_NAME)
     out_dir = os.path.join(args.out, EXP_NAME)
     best_acc = 0
-    best_acc_2 = 0
 
     def create_model(args):
         if args.arch == 'resnet3D18':

@@ -20,7 +20,7 @@ import random
 
 
 class ContrastiveDataset(Dataset):
-    def __init__(self, root = '', fold=1, transform=None, frames_path='', num_clips=2, num_frames=8, hard_positive=False, cross_subject=False):
+    def __init__(self, root = '', fold=1, transform=None, frames_path='', num_clips=2, num_frames=8, hard_positive=False, cross_subject=False, random_temporal=True):
 
         self.num_clips = num_clips
         self.num_frames = num_frames
@@ -34,11 +34,13 @@ class ContrastiveDataset(Dataset):
 
         self.fold = fold
         if hard_positive:
-            self.video_paths, self.targets = self.build_hard_positive_paths()
+            if not cross_subject:
+                self.video_paths, self.targets = self.build_hard_positive_paths()
         else:
             self.video_paths, self.targets = self.build_paths()
         self.targets = np.array(self.targets)
         self.transform = transform
+        self.random_temporal = random_temporal
 
     def __len__(self):
         return len(self.video_paths)
@@ -46,12 +48,29 @@ class ContrastiveDataset(Dataset):
     def __getitem__(self, idx):
         video_dict, video_label = self.video_paths[idx], self.targets[idx]
         positives = []
+        ids = []
         for view_dict in video_dict.keys():
-            video = self.get_video(video_dict[view_dict])
+            video, ids_tmp = self.get_video(video_dict[view_dict], ids)
+            if not self.random_temporal:
+                ids = ids_tmp
             positives.append(video)
         return positives, video_label-1
+    def _get_ids(self, no_frames, total_frames, skip_rate, ids):
+        if len(ids) == 0:
+            try:
+                #start_frame = random.randint(0, no_frames - total_frames) ## 32, 16 frames
+                ids = np.sort(np.random.randint([i * no_frames // self.num_clips for i in range(self.num_clips)],
+                                          [i * (no_frames // self.num_clips) - total_frames for i in range(1, self.num_clips+1)], self.num_clips))
 
-    def get_video(self, video_dict):
+            except:
+                #print("Frame exception", no_frames, total_frames, self.num_clips*total_frames)
+                #start_frame = 0
+                ids = [i*(total_frames-skip_rate) for i in range(self.num_clips)]
+        else:
+            ids = [round(ratio*no_frames) for ratio in ids]
+        return ids
+
+    def get_video(self, video_dict, ids=[]):
         no_frames = video_dict['no_frames']-1
         skip_rate = 1
         total_frames = self.num_frames*skip_rate
@@ -62,16 +81,7 @@ class ContrastiveDataset(Dataset):
                 skip_rate = 1
             total_frames = (self.num_frames)*skip_rate
 
-        try:
-            #start_frame = random.randint(0, no_frames - total_frames) ## 32, 16 frames
-            ids = np.sort(np.random.randint([i * no_frames // self.num_clips for i in range(self.num_clips)],
-                                      [i * (no_frames // self.num_clips) - total_frames for i in range(1, self.num_clips+1)], self.num_clips))
-
-        except:
-            #print("Frame exception", no_frames, total_frames, self.num_clips*total_frames)
-            #start_frame = 0
-            ids = [i*(total_frames-skip_rate) for i in range(self.num_clips)]
-            #print("passed exception")
+        ids = self._get_ids(no_frames, total_frames, skip_rate, ids)
         clips = []
         for start_frame in ids:
             video_container = []
@@ -86,7 +96,7 @@ class ContrastiveDataset(Dataset):
                 clip = [self.transform(img) for img in video_container] #[transforms.functional.normalize(self.transform(img), normal_mean, normal_std) for img in video_container]
             clip = torch.stack(clip, 0).permute(1, 0, 2, 3)
             clips.append(clip)
-        return torch.stack(clips)
+        return torch.stack(clips), [i/total_frames for i in ids]
 
     def _decrypt_vid_name(self, vid):
         scene = int(vid[1:4])
@@ -172,5 +182,5 @@ class ContrastiveDataset(Dataset):
                     data_paths.append(positive_pair)
         return data_paths, targets
 
-#dataset=ContrastiveDataset(root='',frames_path='/datasets/NTU-ARD/frames-240x135', hard_positive=True)
-#print(len(dataset.video_paths))
+dataset=ContrastiveDataset(root='',frames_path='/datasets/NTU-ARD/frames-240x135', hard_positive=True)
+print(dataset.video_paths[0])

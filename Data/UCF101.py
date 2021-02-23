@@ -45,7 +45,7 @@ def get_ucf101(root='Data', frames_path=''):
     return train_dataset, test_dataset
 
 
-def get_ntuard(root='Data', frames_path='/datasets/NTU-ARD/frames-240x135', num_clips=1, cross_subject=False, contrastive=False, augment=True, hard_positive=False):
+def get_ntuard(root='Data', frames_path='/datasets/NTU-ARD/frames-240x135', num_clips=1, cross_subject=False, contrastive=False, augment=True, hard_positive=False, random_temporal=True):
 
     ## augmentations
     crop_scales = [1.0]
@@ -76,7 +76,7 @@ def get_ntuard(root='Data', frames_path='/datasets/NTU-ARD/frames-240x135', num_
     if contrastive:
         if not augment:
             transform_contrastive = transform_train
-        contrastive_dataset = ContrastiveDataset(root=root, fold=1, transform=transform_contrastive, num_clips=num_clips, frames_path=frames_path, cross_subject=cross_subject, hard_positive=hard_positive)
+        contrastive_dataset = ContrastiveDataset(root=root, fold=1, transform=transform_contrastive, num_clips=num_clips, frames_path=frames_path, cross_subject=cross_subject, hard_positive=hard_positive, random_temporal=random_temporal)
         return contrastive_dataset
     if augment:
         transform_train = transform_val = transform_contrastive
