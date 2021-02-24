@@ -165,6 +165,9 @@ def main_training_testing(EXP_NAME):
         set_seed(args)
 
     os.makedirs(out_dir, exist_ok=True)
+    # remove previous logs
+    os.system(f'rm {out_dir}/events.*')
+
     writer = SummaryWriter(out_dir)
 
     train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips, augment=args.augment, cross_subject=args.cross_subject, hard_positive=args.hard_positive, random_temporal=args.random_temporal)
@@ -208,8 +211,9 @@ def main_training_testing(EXP_NAME):
 
     for epoch in range(args.start_epoch, args.epochs):
 
-        train_loss = train(args, train_loader, model, optimizer, scheduler, epoch)
+        train_loss, train_acc = train(args, train_loader, model, optimizer, scheduler, epoch)
         writer.add_scalar('Loss/train', train_loss, epoch)
+        writer.add_scalar('Accuracy/train', train_acc, epoch)
         is_best = min_train_loss > train_loss
         min_train_loss = train_loss if is_best else min_train_loss
 
@@ -287,7 +291,7 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
 
         if not args.no_progress:
             p_bar.set_description(
-                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}\n".format(
+                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}".format(
                     epoch=epoch + 1,
                     epochs=args.epochs,
                     batch=batch_idx + 1,
@@ -301,7 +305,7 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
     if not args.no_progress:
         p_bar.close()
 
-    return losses.avg
+    return losses.avg, top1.avg
 
 if __name__ == '__main__':
     cudnn.benchmark = True

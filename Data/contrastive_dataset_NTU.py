@@ -56,6 +56,11 @@ class ContrastiveDataset(Dataset):
             positives.append(video)
         return positives, video_label-1
     def _get_ids(self, no_frames, total_frames, skip_rate, ids):
+        def handle_edge_case(ratio):
+            potential = abs(int(ratio*no_frames))
+            if potential+total_frames >= no_frames:
+                return no_frames-total_frames
+            return potential
         if len(ids) == 0:
             try:
                 #start_frame = random.randint(0, no_frames - total_frames) ## 32, 16 frames
@@ -67,8 +72,8 @@ class ContrastiveDataset(Dataset):
                 #start_frame = 0
                 ids = [i*(total_frames-skip_rate) for i in range(self.num_clips)]
         else:
-            ids = [round(ratio*no_frames) for ratio in ids]
-        return ids
+            ids = [handle_edge_case(ratio) for ratio in ids]
+        return list(ids)
 
     def get_video(self, video_dict, ids=[]):
         no_frames = video_dict['no_frames']-1
@@ -80,7 +85,6 @@ class ContrastiveDataset(Dataset):
             if skip_rate == 0:
                 skip_rate = 1
             total_frames = (self.num_frames)*skip_rate
-
         ids = self._get_ids(no_frames, total_frames, skip_rate, ids)
         clips = []
         for start_frame in ids:
@@ -96,7 +100,7 @@ class ContrastiveDataset(Dataset):
                 clip = [self.transform(img) for img in video_container] #[transforms.functional.normalize(self.transform(img), normal_mean, normal_std) for img in video_container]
             clip = torch.stack(clip, 0).permute(1, 0, 2, 3)
             clips.append(clip)
-        return torch.stack(clips), [i/total_frames for i in ids]
+            return torch.stack(clips), [i/no_frames for i in ids]
 
     def _decrypt_vid_name(self, vid):
         scene = int(vid[1:4])
@@ -181,6 +185,3 @@ class ContrastiveDataset(Dataset):
                     targets.append(action)
                     data_paths.append(positive_pair)
         return data_paths, targets
-
-dataset=ContrastiveDataset(root='',frames_path='/datasets/NTU-ARD/frames-240x135', hard_positive=True)
-print(dataset.video_paths[0])
