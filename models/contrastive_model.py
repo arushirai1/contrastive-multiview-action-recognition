@@ -46,9 +46,6 @@ class ContrastiveModel(nn.Module):
         x = self.base_model(x)
         if self.eval_mode == True:
             x = self.classifier(x)
-        else:
-            # when training
-            x = self.fc(x)
         return x
 
 
