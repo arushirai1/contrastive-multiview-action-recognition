@@ -266,7 +266,8 @@ class VideoResNet(nn.Module):
 
         x= x.view(-1,clips,512)
         x=(torch.sum(x, dim=1)/clips)
-        x = self.fc(x)
+        if self.fc is not None:
+            x = self.fc(x)
 
         return x
 

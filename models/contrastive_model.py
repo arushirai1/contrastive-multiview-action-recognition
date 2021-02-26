@@ -35,6 +35,7 @@ class ContrastiveModel(nn.Module):
         self.classifier = nn.Sequential(*layers)
         for param in self.classifier.parameters():
             param.requires_grad = True
+        self.base_model.fc = None
 
     def build_mlp(self, fc):
         in_features = fc.in_features
@@ -42,12 +43,12 @@ class ContrastiveModel(nn.Module):
         return nn.Sequential(hidden, nn.ReLU(), fc)
 
     def forward(self, x):
-        x = self.base_model.extract_representation(x)
+        x = self.base_model(x)
         if self.eval_mode == True:
             x = self.classifier(x)
         else:
             # when training
-            x = self.base_model.fc(x)
+            x = self.fc(x)
         return x
 
 
