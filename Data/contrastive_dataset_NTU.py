@@ -34,8 +34,7 @@ class ContrastiveDataset(Dataset):
 
         self.fold = fold
         if hard_positive:
-            if not cross_subject:
-                self.video_paths, self.targets = self.build_hard_positive_paths()
+            self.video_paths, self.targets = self.build_hard_positive_paths()
         else:
             self.video_paths, self.targets = self.build_paths()
         self.targets = np.array(self.targets)
@@ -46,11 +45,11 @@ class ContrastiveDataset(Dataset):
         return len(self.video_paths)
 
     def __getitem__(self, idx):
-        video_dict, video_label = self.video_paths[idx], self.targets[idx]
+        video_paths, video_label = self.video_paths[idx], self.targets[idx]
         positives = []
         ids = []
-        for view_dict in video_dict.keys():
-            video, ids_tmp = self.get_video(video_dict[view_dict], ids)
+        for view_dict in video_paths:
+            video, ids_tmp = self.get_video(view_dict, ids)
             if not self.random_temporal:
                 ids = ids_tmp
             positives.append(video)
@@ -77,7 +76,7 @@ class ContrastiveDataset(Dataset):
 
     def get_video(self, video_dict, ids=[]):
         no_frames = video_dict['no_frames']-1
-        skip_rate = 1
+        skip_rate = 2
         total_frames = self.num_frames*skip_rate
 
         if total_frames*self.num_clips > no_frames:
@@ -169,19 +168,19 @@ class ContrastiveDataset(Dataset):
         data_paths = []
         targets = []
         annotation_path = self.get_annotation_path()
-
         with open(annotation_path, "r") as fid:
             dataList = fid.readlines()
             action_path_dict = self.get_action_path_dict(dataList)
             data_pairs = self.get_pairs(action_path_dict)
             for pair in data_pairs:
                 _,_,_, action = self._decrypt_vid_name(pair[0][0].split("/")[1])
-                permuted_pair = [(pair[0],pair[1]), (pair[1],pair[0])] # for only two views, TODO: Generalize
-                for pair in permuted_pair:
-                    positive_pair = {}
-                    for i,view in enumerate(self.views):
-                        video_name = pair[i][0]
-                        positive_pair[view]= {'path':os.path.join(self.frames_path, video_name, str(view)), 'no_frames':int(pair[i][view])}
+                for view in self.views:
+                    positive_pair = []
+                    for video_item in pair:
+                        video_name = video_item[0]
+                        positive_pair.append({'path':os.path.join(self.frames_path, video_name, str(view)), 'no_frames':int(video_item[view])})
                     targets.append(action)
                     data_paths.append(positive_pair)
         return data_paths, targets
+
+contrastive_dataset = ContrastiveDataset(root='', fold=1, transform=None, num_clips=1, frames_path='', cross_subject=True, hard_positive=True, random_temporal=False)
