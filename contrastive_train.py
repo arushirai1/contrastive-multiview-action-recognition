@@ -110,6 +110,8 @@ def main_training_testing(EXP_NAME):
                         help='use nesterov momentum')
     parser.add_argument('--pretrained', action='store_true', default=False,
                         help='use pretrained version')
+    parser.add_argument('--multiview', action='store_true', default=False,
+                        help='use multiview version')
     parser.add_argument('--use-gru', action='store_true', default=False,
                         help='use gru')
     parser.add_argument('--augment', action='store_true', default=False,
@@ -170,7 +172,7 @@ def main_training_testing(EXP_NAME):
 
     writer = SummaryWriter(out_dir)
 
-    train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips, augment=args.augment, cross_subject=args.cross_subject, hard_positive=args.hard_positive, random_temporal=args.random_temporal)
+    train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips, multiview=args.multiview, augment=args.augment, cross_subject=args.cross_subject, hard_positive=args.hard_positive, random_temporal=args.random_temporal)
 
     model = ContrastiveModel(_init_backbone, args.feature_size)
     model.to(args.device)

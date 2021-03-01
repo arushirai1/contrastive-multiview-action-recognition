@@ -20,7 +20,7 @@ import random
 
 
 class ContrastiveDataset(Dataset):
-    def __init__(self, root = '', fold=1, transform=None, frames_path='', num_clips=2, num_frames=8, hard_positive=False, cross_subject=False, random_temporal=True):
+    def __init__(self, root = '', fold=1, transform=None, frames_path='', num_clips=2, num_frames=8, multiview=False, hard_positive=False, cross_subject=False, random_temporal=True):
 
         self.num_clips = num_clips
         self.num_frames = num_frames
@@ -34,7 +34,7 @@ class ContrastiveDataset(Dataset):
 
         self.fold = fold
         if hard_positive:
-            self.video_paths, self.targets = self.build_hard_positive_paths()
+            self.video_paths, self.targets = self.build_hard_positive_paths(multiview)
         else:
             self.video_paths, self.targets = self.build_paths()
         self.targets = np.array(self.targets)
@@ -164,7 +164,7 @@ class ContrastiveDataset(Dataset):
                 data_paths.append(positive_pair)
         return data_paths, targets
 
-    def build_hard_positive_paths(self):
+    def build_hard_positive_paths(self, multiview=False):
         data_paths = []
         targets = []
         annotation_path = self.get_annotation_path()
@@ -172,13 +172,26 @@ class ContrastiveDataset(Dataset):
             dataList = fid.readlines()
             action_path_dict = self.get_action_path_dict(dataList)
             data_pairs = self.get_pairs(action_path_dict)
-            for pair in data_pairs:
-                _,_,_, action = self._decrypt_vid_name(pair[0][0].split("/")[1])
-                for view in self.views:
-                    positive_pair = []
-                    for video_item in pair:
-                        video_name = video_item[0]
-                        positive_pair.append({'path':os.path.join(self.frames_path, video_name, str(view)), 'no_frames':int(video_item[view])})
-                    targets.append(action)
-                    data_paths.append(positive_pair)
+            if multiview:
+                for pair in data_pairs:
+                    _, _, _, action = self._decrypt_vid_name(pair[0][0].split("/")[1])
+                    permuted_pair = [(pair[0], pair[1]), (pair[1], pair[0])]  # for only two views, TODO: Generalize
+                    for pair in permuted_pair:
+                        positive_pair = []
+                        for i, view in enumerate(self.views):
+                            video_name = pair[i][0]
+                            positive_pair.append({'path': os.path.join(self.frames_path, video_name, str(view)),
+                                                   'no_frames': int(pair[i][view])})
+                        targets.append(action)
+                        data_paths.append(positive_pair)
+            else:
+                for pair in data_pairs:
+                    _,_,_, action = self._decrypt_vid_name(pair[0][0].split("/")[1])
+                    for view in self.views:
+                        positive_pair = []
+                        for video_item in pair:
+                            video_name = video_item[0]
+                            positive_pair.append({'path':os.path.join(self.frames_path, video_name, str(view)), 'no_frames':int(video_item[view])})
+                        targets.append(action)
+                        data_paths.append(positive_pair)
         return data_paths, targets
