@@ -182,5 +182,3 @@ class ContrastiveDataset(Dataset):
                     targets.append(action)
                     data_paths.append(positive_pair)
         return data_paths, targets
-
-contrastive_dataset = ContrastiveDataset(root='', fold=1, transform=None, num_clips=1, frames_path='', cross_subject=True, hard_positive=True, random_temporal=False)
