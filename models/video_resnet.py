@@ -203,7 +203,7 @@ class VideoResNet(nn.Module):
 
     def __init__(self, block, conv_makers, layers,
                  stem, num_classes=400,
-                 zero_init_residual=False):
+                 zero_init_residual=False, endpoint='fc'):
         """Generic resnet video generator.
         Args:
             block (nn.Module): resnet building block
@@ -217,14 +217,24 @@ class VideoResNet(nn.Module):
         self.inplanes = 64
 
         self.stem = stem()
-
-        self.layer1 = self._make_layer(block, conv_makers[0], 64, layers[0], stride=1, dropout=0.3)
-        self.layer2 = self._make_layer(block, conv_makers[1], 128, layers[1], stride=2, dropout=0.3)
-        self.layer3 = self._make_layer(block, conv_makers[2], 256, layers[2], stride=2, dropout=0.3)
-        self.layer4 = self._make_layer(block, conv_makers[3], 512, layers[3], stride=2)
-
-        self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
+        self.layers = []
+        layer1 = self._make_layer(block, conv_makers[0], 64, layers[0], stride=1, dropout=0.3)
+        self.layers.append(layer1)
+        if endpoint != 'layer1':
+            layer2 = self._make_layer(block, conv_makers[1], 128, layers[1], stride=2, dropout=0.3)
+            self.layers.append(layer2)
+            if endpoint != 'layer2':
+                layer3 = self._make_layer(block, conv_makers[2], 256, layers[2], stride=2, dropout=0.3)
+                self.layers.append(layer3)
+                if endpoint != 'layer3':
+                    layer4 = self._make_layer(block, conv_makers[3], 512, layers[3], stride=2)
+                    self.layers.append(layer4)
+                    if endpoint != 'layer4':
+                        self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+                        self.fc = nn.Linear(512 * block.expansion, num_classes)
+                    else:
+                        self.avgpool = None
+                        self.fc = None
 
         # init weights
         self._initialize_weights()
@@ -239,35 +249,35 @@ class VideoResNet(nn.Module):
         x = x.view(-1, 3, 8, 112, 112)
         x = self.stem(x)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        x = self.avgpool(x)
-        # Flatten the layer to fc
-        x = x.flatten(1)
+        for layer in self.layers:
+            x = layer(x)
 
-        x = x.view(-1, clips, 512)
-        x = (torch.sum(x, dim=1) / clips)
+        if self.avgpool is not None:
+            x = self.avgpool(x)
+            # Flatten the layer to fc
+            x = x.flatten(1)
+
+            x= x.view(-1,clips,512)
+            x=(torch.sum(x, dim=1)/clips)
+
         return x
 
     def forward(self, x):
         clips=x.shape[1]
         x=x.view(-1,3,8, 112,112)
         x = self.stem(x)
+        for layer in self.layers:
+            x = layer(x)
+        if self.avgpool is not None:
+            x = self.avgpool(x)
+            # Flatten the layer to fc
+            x = x.flatten(1)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        x = self.avgpool(x)
-        # Flatten the layer to fc
-        x = x.flatten(1)
+            x= x.view(-1,clips,512)
+            x=(torch.sum(x, dim=1)/clips)
 
-        x= x.view(-1,clips,512)
-        x=(torch.sum(x, dim=1)/clips)
-        if self.fc is not None:
-            x = self.fc(x)
+            if self.fc is not None:
+                x = self.fc(x)
 
         return x
 

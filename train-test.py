@@ -105,12 +105,21 @@ def main_training_testing():
                         help="For distributed training: local_rank")
     parser.add_argument('--num-class', default=101, type=int,
                         help='total classes')
+    parser.add_argument('--augment', action='store_true', default=False,
+                        help='use augmentations defined in simclr')
     parser.add_argument('--finetune', action='store_true', default=False,
                         help='select method of eval: finetune (True) or linear probe (False)')
     parser.add_argument('--endpoint', default='B', type=str,
                         help='the layer the representation is extracted from from')
-    parser.add_argument('--augment', action='store_true', default=False,
-                        help='use augmentations defined in simclr')
+    parser.add_argument('--d-model', default=128, type=int,
+                        help='Dimension of the hidden representations used in the transformer head')
+    parser.add_argument('--num-layers', default=3, type=int,
+                        help='Number of encoder layers in the transformer head')
+    parser.add_argument('--num-heads', default=2, type=int,
+                        help='Number of attention heads in each encoder layer')
+    parser.add_argument('--base_endpoint', default='layer4', type=str,
+                        help='the endpoint of the base model before the transformer')
+
 
     args = parser.parse_args()
     print(args)
@@ -126,6 +135,17 @@ def main_training_testing():
     out_dir = os.path.join(args.out, EXP_NAME)
     best_acc = 0
 
+    def init_transformer(args):
+        # only supporting resnet3d, TODO: Add support for i3d
+        from models import video_resnet
+        print("Inside init backbone", num_classes)
+        base_model = video_resnet.r3d_18(endpoint=args.base_endpoint)
+
+        if args.arch == 'transformer':
+            from models import transformer_model
+            model = transformer_model.TransformerModel(base_model, args.num_classes, d_model=args.d_model, N=args.num_layers, h=args.num_heads, dropout=0.3)
+        return model
+
     def create_model(args):
         if args.arch == 'resnet3D18':
             import models.video_resnet as models
@@ -134,6 +154,9 @@ def main_training_testing():
             import models.i3d as models
             model = models.i3d(num_classes=args.num_class, use_gru=args.use_gru, pretrained=args.pretrained,
                                pretrained_path='./models/rgb_imagenet.pt')
+        elif args.arch == 'transformer':
+            model = init_transformer(args)
+
         return model
 
     def init_contrastive(args):
