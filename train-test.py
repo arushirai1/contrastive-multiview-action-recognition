@@ -138,12 +138,11 @@ def main_training_testing():
     def init_transformer(args):
         # only supporting resnet3d, TODO: Add support for i3d
         from models import video_resnet
-        print("Inside init backbone", num_classes)
         base_model = video_resnet.r3d_18(endpoint=args.base_endpoint)
 
         if args.arch == 'transformer':
             from models import transformer_model
-            model = transformer_model.TransformerModel(base_model, args.num_classes, d_model=args.d_model, N=args.num_layers, h=args.num_heads, dropout=0.3)
+            model = transformer_model.TransformerModel(base_model, args.num_class, d_model=args.d_model, N=args.num_layers, h=args.num_heads, dropout=0.3, endpoint=args.base_endpoint)
         return model
 
     def create_model(args):
@@ -200,7 +199,8 @@ def main_training_testing():
         print("Out features")
         print(model.classifier[-1].out_features)
 
-    model.to(args.device)
+
+    model = model.to(args.device)
 
     args.iteration = len(train_dataset) // args.batch_size // args.world_size
     train_sampler = RandomSampler

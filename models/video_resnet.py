@@ -220,6 +220,8 @@ class VideoResNet(nn.Module):
         self.layers = []
         layer1 = self._make_layer(block, conv_makers[0], 64, layers[0], stride=1, dropout=0.3)
         self.layers.append(layer1)
+        self.avgpool = None
+        self.fc = None
         if endpoint != 'layer1':
             layer2 = self._make_layer(block, conv_makers[1], 128, layers[1], stride=2, dropout=0.3)
             self.layers.append(layer2)
@@ -232,10 +234,9 @@ class VideoResNet(nn.Module):
                     if endpoint != 'layer4':
                         self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
                         self.fc = nn.Linear(512 * block.expansion, num_classes)
-                    else:
-                        self.avgpool = None
-                        self.fc = None
 
+        for i, layer in enumerate(self.layers):
+            self.add_module('layer'+str(i), layer)
         # init weights
         self._initialize_weights()
 
