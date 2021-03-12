@@ -141,7 +141,7 @@ def main_training_testing():
         base_model = video_resnet.r3d_18(endpoint=args.base_endpoint)
 
         if args.arch == 'transformer':
-            from models import transformer_model
+            from models import transformer_model2 as transformer_model
             model = transformer_model.TransformerModel(base_model, args.num_class, d_model=args.d_model, N=args.num_layers, h=args.num_heads, dropout=0.3, endpoint=args.base_endpoint)
         return model
 
