@@ -41,8 +41,10 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        positional_embedding = Variable(self.pe[:, :x.size(1)],
+        print(x.shape)
+        positional_embedding = Variable(self.pe[:, :x.size(-1)],
                          requires_grad=False)
+        print(positional_embedding.shape)
         x = x + positional_embedding
         return self.dropout(x)
 
@@ -197,14 +199,14 @@ class TransformerModel(nn.Module):
                 T, H, W = (1, 7, 7)
             elif endpoint == 'layer3':
                 in_channels = 256
-                T, H, W = (4, 14, 14)
+                T, H, W = (2, 14, 14)
 
-            self.positional_embedding = PositionalEncoding(in_channels, dropout)
+            #self.positional_embedding = PositionalEncoding(in_channels, dropout)
 
             feed_forward = PositionwiseFeedForward(in_channels, in_channels * 2, dropout)
-            attention = MultiHeadedAttention(in_channels=in_channels, out_channels=d_model, T=T, H=H, W=W)
+            attention = MultiHeadedAttention(in_channels=in_channels, out_channels=d_model, num_heads=h, T=T, H=H, W=W)
 
-            self.encoder = EncoderLayer(in_channels, c(attention), feed_forward=c(feed_forward), dropout=dropout)
+            self.encoder = Encoder(EncoderLayer(in_channels, c(attention), feed_forward=c(feed_forward), dropout=dropout), N)
             self.avg_pool = nn.AvgPool3d(kernel_size=(T,H,W))
 
         self.classifier = nn.Sequential(nn.Linear(in_channels, d_model), nn.ReLU(), nn.Linear(d_model, num_classes))
@@ -217,7 +219,8 @@ class TransformerModel(nn.Module):
 
     def forward(self, x):
         x = self.base_model(x)
-        x = self.positional_embedding(x.permute(0,2,3,4,1)).permute(0,4,1,2,3)
+        #x = self.positional_embedding(x.permute(0,2,3,4,1)).permute(0,4,1,2,3)
+
         if self.endpoint in ['layer4', 'layer3']:
             x = self.encoder(x, x)
             x = self.avg_pool(x)

@@ -196,7 +196,7 @@ def main_training_testing(EXP_NAME):
 
     min_train_loss=math.inf
     train_loss_list=[]
-
+    print("before resume")
     if args.resume:
         assert os.path.isfile(
             args.resume), "Error: no checkpoint directory found!"
@@ -208,36 +208,38 @@ def main_training_testing(EXP_NAME):
         optimizer.load_state_dict(checkpoint['optimizer'])
         scheduler.load_state_dict(checkpoint['scheduler'])
         args.start_epoch = start_epoch
-
+    print('Epochs', args.start_epoch, args.epochs)
     model.zero_grad()
+    try:
+        for epoch in range(args.start_epoch, args.epochs):
 
-    for epoch in range(args.start_epoch, args.epochs):
+            train_loss, train_acc = train(args, train_loader, model, optimizer, scheduler, epoch)
+            writer.add_scalar('Loss/train', train_loss, epoch)
+            writer.add_scalar('Accuracy/train', train_acc, epoch)
+            is_best = min_train_loss > train_loss
+            min_train_loss = train_loss if is_best else min_train_loss
 
-        train_loss, train_acc = train(args, train_loader, model, optimizer, scheduler, epoch)
-        writer.add_scalar('Loss/train', train_loss, epoch)
-        writer.add_scalar('Accuracy/train', train_acc, epoch)
-        is_best = min_train_loss > train_loss
-        min_train_loss = train_loss if is_best else min_train_loss
+            # save checkpoint
+            if args.local_rank == -1 or torch.distributed.get_rank() == 0:
+                model_to_save = model.module if hasattr(model, "module") else model
+                save_checkpoint({
+                    'epoch': epoch + 1,
+                    'state_dict': model_to_save.state_dict(),
+                    'loss': train_loss,
+                    'best_loss': min_train_loss,
+                    'optimizer': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict(),
+                }, is_best, out_dir)
 
-        # save checkpoint
-        if args.local_rank == -1 or torch.distributed.get_rank() == 0:
-            model_to_save = model.module if hasattr(model, "module") else model
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': model_to_save.state_dict(),
-                'loss': train_loss,
-                'best_loss': min_train_loss,
-                'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict(),
-            }, is_best, out_dir)
+            train_loss_list.append(min_train_loss)
+        with open(f'results/{EXP_NAME}/score_logger.txt', 'a+') as ofile:
+            ofile.write(
+                f'Best Loss: {min_train_loss}\n')
 
-        train_loss_list.append(min_train_loss)
-    with open(f'results/{EXP_NAME}/score_logger.txt', 'a+') as ofile:
-        ofile.write(
-            f'Best Loss: {min_train_loss}\n')
-
-    if args.local_rank in [-1, 0]:
-        writer.close()
+        if args.local_rank in [-1, 0]:
+            writer.close()
+    except Exception as e:
+        print("Exception", e)
 
 def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
     batch_time = AverageMeter()
