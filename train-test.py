@@ -117,7 +117,7 @@ def main_training_testing():
                         help='Number of encoder layers in the transformer head')
     parser.add_argument('--num-heads', default=2, type=int,
                         help='Number of attention heads in each encoder layer')
-    parser.add_argument('--base_endpoint', default='layer4', type=str,
+    parser.add_argument('--base_endpoint', default='fc', type=str,
                         help='the endpoint of the base model before the transformer')
 
 
@@ -194,6 +194,7 @@ def main_training_testing():
         assert os.path.isfile(
             args.resume), "Error: no checkpoint directory found!"
         checkpoint = torch.load(args.resume)
+
         model.load_state_dict(checkpoint['state_dict'])
         model.eval_finetune(finetune=args.finetune, endpoint=args.endpoint, num_classes=args.num_class)
         print("Out features")

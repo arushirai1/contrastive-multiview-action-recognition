@@ -236,7 +236,7 @@ class VideoResNet(nn.Module):
                         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
         for i, layer in enumerate(self.layers):
-            self.add_module('layer'+str(i), layer)
+            self.add_module('layer'+str(i+1), layer)
         # init weights
         self._initialize_weights()
 
