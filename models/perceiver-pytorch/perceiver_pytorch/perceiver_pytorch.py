@@ -181,7 +181,7 @@ class Perceiver(nn.Module):
         assert len(axis) == self.input_axis, 'input data must have the right number of axis'
 
         # calculate fourier encoded positions in the range of [-1, 1], for all axis
-
+        breakpoint()
         axis_pos = list(map(lambda size: torch.linspace(-1., 1., steps = size, device = device), axis))
         pos = torch.stack(torch.meshgrid(*axis_pos), dim = -1)
         enc_pos = fourier_encode(pos, self.max_freq, self.num_freq_bands, base = self.freq_base)

@@ -155,6 +155,10 @@ def main_training_testing():
                                pretrained_path='./models/rgb_imagenet.pt')
         elif args.arch == 'transformer':
             model = init_transformer(args)
+        elif args.arch == 'perceiver':
+            from models.perceiver_pytorch.perceiver_pytorch import Perceiver
+
+            model = Perceiver(input_channels=3, input_axis=3, depth=3, num_freq_bands=6, num_classes = args.num_class)
 
         return model
 
