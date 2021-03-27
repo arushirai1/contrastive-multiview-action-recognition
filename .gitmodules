@@ -1,0 +1,3 @@
+[submodule "perceiver-pytorch"]
+	path = perceiver-pytorch
+	url = https://github.com/lucidrains/perceiver-pytorch

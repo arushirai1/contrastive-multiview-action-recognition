@@ -3,7 +3,8 @@ from torch import nn
 from torch.autograd import Variable
 import math, copy, time
 import torch.nn.functional as F
-
+from einops import rearrange, repeat
+from math import log, pi
 ### TESTING INSTRUCTIONS
 '''
 3) add the positional embedding in the transformer module
@@ -22,6 +23,19 @@ def clones(module, N):
     "Produce N identical layers."
     return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
 
+def fourier_encode(x, max_freq, num_bands = 4, base = 2):
+    "From https://github.com/lucidrains/perceiver-pytorch"
+    x = x.unsqueeze(-1)
+    device, dtype, orig_x = x.device, x.dtype, x
+
+    scales = torch.logspace(1., log(max_freq / 2) / log(base), num_bands, base = base, device = device, dtype = dtype)
+    scales = scales[(*((None,) * (len(x.shape) - 1)), Ellipsis)]
+
+    x = x * scales * pi
+    x = torch.cat([x.sin(), x.cos()], dim=-1)
+    x = torch.cat((x, orig_x), dim = -1)
+    return x
+
 ### MODULES ###
 class PositionalEncoding(nn.Module):
     "Implement the PE function."
@@ -30,23 +44,19 @@ class PositionalEncoding(nn.Module):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 
-        # Compute the positional encodings once in log space.
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) *
-                             -(math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe)
-
     def forward(self, x):
-        print(x.shape)
-        positional_embedding = Variable(self.pe[:, :x.size(-1)],
-                         requires_grad=False)
-        print(positional_embedding.shape)
-        x = x + positional_embedding
-        return self.dropout(x)
+        b, _, *axis = x.shape
+
+        # calculate fourier encoded positions in the range of [-1, 1], for all axis
+
+        axis_pos = list(map(lambda size: torch.linspace(-1., 1., steps=size, device = x.device), axis))
+        pos = torch.stack(torch.meshgrid(*axis_pos), dim=-1)
+        enc_pos = fourier_encode(pos, 10, 4, base=2)
+        enc_pos = rearrange(enc_pos, '... n d -> (n d) ... ')
+        enc_pos = repeat(enc_pos, '... -> b ...', b=b)
+
+        x = torch.cat((x, enc_pos), dim=1)
+        return x
 
 class LayerNorm(nn.Module):
     "Construct a layernorm module (See citation for details)."
@@ -192,16 +202,16 @@ class TransformerModel(nn.Module):
         self.endpoint = endpoint
         in_channels = 512*1*7*7
         c = copy.deepcopy
-
+        positional_embedding_size = 27
         if self.endpoint in ['layer4', 'layer3']:
             if endpoint == 'layer4':
-                in_channels = 512
+                in_channels = 512 + positional_embedding_size
                 T, H, W = (1, 7, 7)
             elif endpoint == 'layer3':
-                in_channels = 256
+                in_channels = 256 + positional_embedding_size
                 T, H, W = (2, 14, 14)
 
-            #self.positional_embedding = PositionalEncoding(in_channels, dropout)
+            self.positional_embedding = PositionalEncoding(in_channels, dropout)
 
             feed_forward = PositionwiseFeedForward(in_channels, in_channels * 2, dropout)
             attention = MultiHeadedAttention(in_channels=in_channels, out_channels=d_model, num_heads=h, T=T, H=H, W=W)
@@ -219,7 +229,7 @@ class TransformerModel(nn.Module):
 
     def forward(self, x):
         x = self.base_model(x)
-        #x = self.positional_embedding(x.permute(0,2,3,4,1)).permute(0,4,1,2,3)
+        x = self.positional_embedding(x)
 
         if self.endpoint in ['layer4', 'layer3']:
             x = self.encoder(x, x)
@@ -229,3 +239,5 @@ class TransformerModel(nn.Module):
 
         #x = self.classifier(x.view(x.shape[0], -1))
         return x
+
+

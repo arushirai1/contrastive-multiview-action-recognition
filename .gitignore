@@ -10,4 +10,4 @@ archive
 endpointVIZ
 *.slurm
 tensorboard_script.py
-tensorboards
+tensorboards/
