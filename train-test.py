@@ -142,7 +142,7 @@ def main_training_testing():
 
         if args.arch == 'transformer':
             from models import transformer_model2 as transformer_model
-            model = transformer_model.TransformerModel(base_model, args.num_class, d_model=args.d_model, N=args.num_layers, h=args.num_heads, dropout=0.3, endpoint=args.base_endpoint)
+            model = transformer_model.TransformerModel(base_model, args.num_class, d_model=args.d_model, N=args.num_layers, h=args.num_heads, dropout=0.3, endpoint=args.base_endpoint, no_clips=args.no_clips)
         return model
 
     def create_model(args):
@@ -158,7 +158,7 @@ def main_training_testing():
         elif args.arch == 'perceiver':
             from models.perceiver_pytorch.perceiver_pytorch import Perceiver
 
-            model = Perceiver(input_channels=3, input_axis=3, depth=3, num_freq_bands=6, num_classes = args.num_class)
+            model = Perceiver(input_channels=3, input_axis=3, depth=3, num_freq_bands=6, max_freq=10, num_classes = args.num_class)
 
         return model
 

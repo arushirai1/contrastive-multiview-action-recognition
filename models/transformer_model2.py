@@ -196,7 +196,7 @@ class Encoder(nn.Module):
         return self.norm(x)
 
 class TransformerModel(nn.Module):
-    def __init__(self, base_model, num_classes, d_model=128, N=3, h=2, dropout=0.3, endpoint=''):
+    def __init__(self, base_model, num_classes, d_model=128, N=3, h=2, dropout=0.3, endpoint='', no_clips=3):
         super(TransformerModel, self).__init__()
         self.base_model = base_model
         self.endpoint = endpoint
@@ -210,6 +210,10 @@ class TransformerModel(nn.Module):
             elif endpoint == 'layer3':
                 in_channels = 256 + positional_embedding_size
                 T, H, W = (2, 14, 14)
+            elif endpoint == 'avgpool':
+                # use temporal attention module
+                in_channels = 512 + positional_embedding_size
+                T, H, W = (1, 1, no_clips)
 
             self.positional_embedding = PositionalEncoding(in_channels, dropout)
 
@@ -231,8 +235,12 @@ class TransformerModel(nn.Module):
         x = self.base_model(x)
         x = self.positional_embedding(x)
 
-        if self.endpoint in ['layer4', 'layer3']:
+        if self.endpoint in ['layer4', 'layer3', 'avgpool']:
+            if len(x.shape) < 5:
+                x = rearrange('b clips channels -> b channels clips 1 1')
+            print(x.shape)
             x = self.encoder(x, x)
+            print(x.shape)
             x = self.avg_pool(x)
             x = x.squeeze()
             x = self.classifier(x)

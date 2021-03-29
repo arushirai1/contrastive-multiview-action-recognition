@@ -233,7 +233,8 @@ class VideoResNet(nn.Module):
                     self.layers.append(layer4)
                     if endpoint != 'layer4':
                         self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
-                        self.fc = nn.Linear(512 * block.expansion, num_classes)
+                        if endpoint != 'avgpool':
+                            self.fc = nn.Linear(512 * block.expansion, num_classes)
 
         for i, layer in enumerate(self.layers):
             self.add_module('layer'+str(i+1), layer)
@@ -259,6 +260,7 @@ class VideoResNet(nn.Module):
             x = x.flatten(1)
 
             x= x.view(-1,clips,512)
+
             x=(torch.sum(x, dim=1)/clips)
 
         return x
@@ -275,9 +277,9 @@ class VideoResNet(nn.Module):
             x = x.flatten(1)
 
             x= x.view(-1,clips,512)
-            x=(torch.sum(x, dim=1)/clips)
 
             if self.fc is not None:
+                x = (torch.sum(x, dim=1) / clips)
                 x = self.fc(x)
 
         return x
