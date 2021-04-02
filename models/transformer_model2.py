@@ -203,17 +203,17 @@ class TransformerModel(nn.Module):
         in_channels = 512*1*7*7
         c = copy.deepcopy
         positional_embedding_size = 27
-        if self.endpoint in ['layer4', 'layer3']:
+        if self.endpoint in ['layer4', 'layer3', 'avgpool']:
             if endpoint == 'layer4':
                 in_channels = 512 + positional_embedding_size
-                T, H, W = (1, 7, 7)
+                T, H, W = (no_clips, 7, 7)
             elif endpoint == 'layer3':
                 in_channels = 256 + positional_embedding_size
-                T, H, W = (2, 14, 14)
+                T, H, W = (no_clips*2, 14, 14)
             elif endpoint == 'avgpool':
                 # use temporal attention module
                 in_channels = 512 + positional_embedding_size
-                T, H, W = (1, 1, no_clips)
+                T, H, W = (no_clips, 1, 1)
 
             self.positional_embedding = PositionalEncoding(in_channels, dropout)
 
@@ -233,19 +233,18 @@ class TransformerModel(nn.Module):
 
     def forward(self, x):
         x = self.base_model(x)
-        x = self.positional_embedding(x)
 
         if self.endpoint in ['layer4', 'layer3', 'avgpool']:
             if len(x.shape) < 5:
-                x = rearrange('b clips channels -> b channels clips 1 1')
-            print(x.shape)
+                x = rearrange(x, 'b clips channels -> b channels clips 1 1')
+            x = self.positional_embedding(x)
             x = self.encoder(x, x)
-            print(x.shape)
             x = self.avg_pool(x)
-            x = x.squeeze()
+
+            x = rearrange(x, 'b f 1 1 1 -> b f')
+
             x = self.classifier(x)
 
-        #x = self.classifier(x.view(x.shape[0], -1))
         return x
 
 

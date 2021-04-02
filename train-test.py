@@ -20,7 +20,7 @@ from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from Data.UCF101 import get_ucf101, get_ntuard
 from utils import AverageMeter, accuracy
-
+import einops
 DATASET_GETTERS = {'ucf101': get_ucf101, 'ntuard': get_ntuard}
 
 
@@ -92,6 +92,8 @@ def main_training_testing():
                         help='use pretrained version')
     parser.add_argument('--use-gru', action='store_true', default=False,
                         help='use gru')
+    parser.add_argument('--spatio-temporal', action='store_true', default=False,
+                        help='Flatten in the last layer')
     parser.add_argument('--feature-size', default=128, type=int,
                         help='size of feature embedding')
     parser.add_argument('--cross-subject', action='store_true', default=False,
@@ -119,6 +121,9 @@ def main_training_testing():
                         help='Number of attention heads in each encoder layer')
     parser.add_argument('--base_endpoint', default='fc', type=str,
                         help='the endpoint of the base model before the transformer')
+    parser.add_argument('--eval_only', action='store_true', default=False,
+                        help='use augmentations defined in simclr')
+    parser.add_argument('--pretrained_path', default='', type=str, help='path to weights of contrastive pretrained model')
 
 
     args = parser.parse_args()
@@ -138,7 +143,7 @@ def main_training_testing():
     def init_transformer(args):
         # only supporting resnet3d, TODO: Add support for i3d
         from models import video_resnet
-        base_model = video_resnet.r3d_18(endpoint=args.base_endpoint)
+        base_model = video_resnet.r3d_18(endpoint=args.base_endpoint, spatio_temporal = args.spatio_temporal)
 
         if args.arch == 'transformer':
             from models import transformer_model2 as transformer_model
@@ -148,7 +153,7 @@ def main_training_testing():
     def create_model(args):
         if args.arch == 'resnet3D18':
             import models.video_resnet as models
-            model = models.r3d_18(num_classes=args.num_class, pretrained=args.pretrained)
+            model = models.r3d_18(num_classes=args.num_class, pretrained=args.pretrained, spatio_temporal = args.spatio_temporal)
         elif args.arch == 'i3d':
             import models.i3d as models
             model = models.i3d(num_classes=args.num_class, use_gru=args.use_gru, pretrained=args.pretrained,
@@ -167,7 +172,7 @@ def main_training_testing():
         def _init_backbone(num_classes):
             from models import video_resnet
             print("Inside init backbone", num_classes)
-            model = video_resnet.r3d_18(num_classes=num_classes, pretrained=args.pretrained)
+            model = video_resnet.r3d_18(num_classes=num_classes, pretrained=args.pretrained, spatio_temporal = args.spatio_temporal)
             return model
 
         if args.arch == 'contrastive':
@@ -186,23 +191,35 @@ def main_training_testing():
     os.makedirs(out_dir, exist_ok=True)
 
     # remove previous logs
-    os.system(f'rm {out_dir}/events.*')
+    if not args.eval_only:
+        os.system(f'rm {out_dir}/events.*')
     writer = SummaryWriter(out_dir)
 
-    train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips=args.no_clips,
+    if args.eval_only:
+        train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips=5,
+                                                                cross_subject=args.cross_subject, augment=args.augment)
+    else:
+        train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips=args.no_clips,
                                                                 cross_subject=args.cross_subject, augment=args.augment)
 
     model = create_model(args) if args.arch != 'contrastive' else init_contrastive(args)
     if args.arch == 'contrastive':
         ### load weights
-        assert os.path.isfile(
-            args.resume), "Error: no checkpoint directory found!"
-        checkpoint = torch.load(args.resume)
+        if args.eval_only:
+            assert os.path.isfile(
+                args.resume), "Error: no checkpoint directory found!"
 
-        model.load_state_dict(checkpoint['state_dict'])
-        model.eval_finetune(finetune=args.finetune, endpoint=args.endpoint, num_classes=args.num_class)
-        print("Out features")
-        print(model.classifier[-1].out_features)
+            checkpoint = torch.load(args.resume)
+            model.eval_finetune(finetune=args.finetune, endpoint=args.endpoint, num_classes=args.num_class)
+            model.load_state_dict(checkpoint['state_dict'])
+        else:
+            assert os.path.isfile(
+                args.pretrained_path), "Error: no checkpoint directory found!"
+
+            checkpoint = torch.load(args.pretrained_path)
+            model.load_state_dict(checkpoint['state_dict'])
+            model.eval_finetune(finetune=args.finetune, endpoint=args.endpoint, num_classes=args.num_class)
+
 
 
     model = model.to(args.device)
@@ -248,45 +265,47 @@ def main_training_testing():
     test_accs = []
     model.zero_grad()
 
-    for epoch in range(args.start_epoch, args.epochs):
+    if args.eval_only:
+        args.no_clips = 5
+        test_loss, test_acc, _ = test(args, test_loader, model, eval_mode=True)
+        print(test_loss, test_acc)
+    else:
+        for epoch in range(args.start_epoch, args.epochs):
+            train_loss, train_acc = train(args, train_loader, model, optimizer, scheduler, epoch)
+            test_loss, test_acc, _ = test(args, test_loader, model, epoch)
+            '''
+            if epoch > (args.epochs+1)/2 and epoch%30==0: 
+                test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
+            elif epoch == (args.epochs-1):
+                test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
+            '''
 
-        train_loss, train_acc = train(args, train_loader, model, optimizer, scheduler, epoch)
-        test_model = model
+            writer.add_scalar('Loss/train', train_loss, epoch)
+            writer.add_scalar('Accuracy/train', train_acc, epoch)
+            writer.add_scalar('Accuracy/test', test_acc, epoch)
+            writer.add_scalar('Loss/test', test_loss, epoch)
 
-        test_loss, test_acc, _ = test(args, test_loader, test_model, epoch)
-        '''
-        if epoch > (args.epochs+1)/2 and epoch%30==0: 
-            test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
-        elif epoch == (args.epochs-1):
-            test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
-        '''
+            is_best = test_acc > best_acc
+            best_acc = max(test_acc, best_acc)
 
-        writer.add_scalar('Loss/train', train_loss, epoch)
-        writer.add_scalar('Accuracy/train', train_acc, epoch)
-        writer.add_scalar('Accuracy/test', test_acc, epoch)
-        writer.add_scalar('Loss/test', test_loss, epoch)
+            if args.local_rank == -1 or torch.distributed.get_rank() == 0:
+                model_to_save = model.module if hasattr(model, "module") else model
+                save_checkpoint({
+                    'epoch': epoch + 1,
+                    'state_dict': model_to_save.state_dict(),
+                    'acc': test_acc,
+                    'best_acc': best_acc,
+                    'optimizer': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict(),
+                }, is_best, out_dir)
 
-        is_best = test_acc > best_acc
-        best_acc = max(test_acc, best_acc)
+            test_accs.append(test_acc)
+        with open(f'results/{EXP_NAME}/score_logger.txt', 'a+') as ofile:
+            ofile.write(
+                f'Last Acc: {test_acc}, Best Acc: {best_acc}\n')
 
-        if args.local_rank == -1 or torch.distributed.get_rank() == 0:
-            model_to_save = model.module if hasattr(model, "module") else model
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': model_to_save.state_dict(),
-                'acc': test_acc,
-                'best_acc': best_acc,
-                'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict(),
-            }, is_best, out_dir)
-
-        test_accs.append(test_acc)
-    with open(f'results/{EXP_NAME}/score_logger.txt', 'a+') as ofile:
-        ofile.write(
-            f'Last Acc: {test_acc}, Best Acc: {best_acc}\n')
-
-    if args.local_rank in [-1, 0]:
-        writer.close()
+        if args.local_rank in [-1, 0]:
+            writer.close()
 
 
 def accuracy(output, target, topk=(1,)):
@@ -342,7 +361,7 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
         end = time.time()
         if not args.no_progress:
             p_bar.set_description(
-                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}\n".format(
+                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}".format(
                     epoch=epoch + 1,
                     epochs=args.epochs,
                     batch=batch_idx + 1,
@@ -359,7 +378,7 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
     return losses.avg, top1.avg
 
 
-def test(args, test_loader, model, epoch):
+def test(args, test_loader, model, eval_mode=False):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -373,12 +392,17 @@ def test(args, test_loader, model, epoch):
 
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(test_loader):
+            if eval_mode:
+                inputs=einops.rearrange(inputs, 'b c ... -> (b c) ...', c = args.no_clips)
             data_time.update(time.time() - end)
 
             inputs = inputs.to(args.device)
             targets = targets.to(args.device)
 
             outputs = model(inputs)
+            if eval_mode:
+                outputs=einops.reduce(outputs, '(b c) logits -> b logits', 'mean', c = args.no_clips) # TODO REDUCE BY AVG
+
             loss = F.cross_entropy(outputs, targets, reduction='mean')
 
             prec1, prec5 = accuracy(outputs.data, targets, topk=(1, 5))

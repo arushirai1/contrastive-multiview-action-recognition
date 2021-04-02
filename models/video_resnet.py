@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import pdb
+from einops import rearrange
 # from ..utils import load_state_dict_from_url
 try:
     from torch.hub import load_state_dict_from_url
@@ -203,7 +204,7 @@ class VideoResNet(nn.Module):
 
     def __init__(self, block, conv_makers, layers,
                  stem, num_classes=400,
-                 zero_init_residual=False, endpoint='fc'):
+                 zero_init_residual=False, endpoint='fc', spatio_temporal=False):
         """Generic resnet video generator.
         Args:
             block (nn.Module): resnet building block
@@ -235,7 +236,7 @@ class VideoResNet(nn.Module):
                         self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
                         if endpoint != 'avgpool':
                             self.fc = nn.Linear(512 * block.expansion, num_classes)
-
+        self.spatio_temporal = spatio_temporal
         for i, layer in enumerate(self.layers):
             self.add_module('layer'+str(i+1), layer)
         # init weights
@@ -271,11 +272,15 @@ class VideoResNet(nn.Module):
         x = self.stem(x)
         for layer in self.layers:
             x = layer(x)
+
+        if self.spatio_temporal:
+            x = rearrange(x, '(b clips) f t h w -> b f (t clips) h w', clips = clips)
+
         if self.avgpool is not None:
             x = self.avgpool(x)
+
             # Flatten the layer to fc
             x = x.flatten(1)
-
             x= x.view(-1,clips,512)
 
             if self.fc is not None:
