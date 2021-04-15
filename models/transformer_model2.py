@@ -196,13 +196,20 @@ class Encoder(nn.Module):
         return self.norm(x)
 
 class TransformerModel(nn.Module):
-    def __init__(self, base_model, num_classes, d_model=128, N=3, h=2, dropout=0.3, endpoint='', no_clips=3):
+    def __init__(self, base_model, num_classes, d_model=128, N=3, h=2, dropout=0.3, endpoint='', no_clips=3, positional_flag=False, eval_mode=False):
         super(TransformerModel, self).__init__()
         self.base_model = base_model
         self.endpoint = endpoint
         in_channels = 512*1*7*7
         c = copy.deepcopy
-        positional_embedding_size = 27
+
+        if positional_flag:
+            positional_embedding_size = 27
+        else:
+            positional_embedding_size = 0
+
+        if eval_mode:
+            no_clips=1
         if self.endpoint in ['layer4', 'layer3', 'avgpool']:
             if endpoint == 'layer4':
                 in_channels = 512 + positional_embedding_size
@@ -214,8 +221,10 @@ class TransformerModel(nn.Module):
                 # use temporal attention module
                 in_channels = 512 + positional_embedding_size
                 T, H, W = (no_clips, 1, 1)
-
-            self.positional_embedding = PositionalEncoding(in_channels, dropout)
+            if positional_flag:
+                self.positional_embedding = PositionalEncoding(in_channels, dropout)
+            else:
+                self.positional_embedding = None
 
             feed_forward = PositionwiseFeedForward(in_channels, in_channels * 2, dropout)
             attention = MultiHeadedAttention(in_channels=in_channels, out_channels=d_model, num_heads=h, T=T, H=H, W=W)
@@ -233,11 +242,11 @@ class TransformerModel(nn.Module):
 
     def forward(self, x):
         x = self.base_model(x)
-
         if self.endpoint in ['layer4', 'layer3', 'avgpool']:
             if len(x.shape) < 5:
                 x = rearrange(x, 'b clips channels -> b channels clips 1 1')
-            x = self.positional_embedding(x)
+            if self.positional_embedding:
+                x = self.positional_embedding(x)
             x = self.encoder(x, x)
             x = self.avg_pool(x)
 

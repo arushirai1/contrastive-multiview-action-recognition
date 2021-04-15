@@ -204,7 +204,7 @@ class VideoResNet(nn.Module):
 
     def __init__(self, block, conv_makers, layers,
                  stem, num_classes=400,
-                 zero_init_residual=False, endpoint='fc', spatio_temporal=False):
+                 zero_init_residual=False, endpoint='fc', spatio_temporal=False, positional_flag=0):
         """Generic resnet video generator.
         Args:
             block (nn.Module): resnet building block
@@ -238,7 +238,7 @@ class VideoResNet(nn.Module):
                             self.fc = nn.Linear(512 * block.expansion, num_classes)
         self.spatio_temporal = spatio_temporal
         for i, layer in enumerate(self.layers):
-            self.add_module('layer'+str(i+1), layer)
+            self.add_module('layer'+str(i+positional_flag), layer)
         # init weights
         self._initialize_weights()
 
@@ -267,7 +267,10 @@ class VideoResNet(nn.Module):
         return x
 
     def forward(self, x):
-        clips=x.shape[1]
+        if len(x.shape) == 5:
+            clips = 1
+        else:
+            clips=x.shape[1]
         x=x.view(-1,3,8, 112,112)
         x = self.stem(x)
         for layer in self.layers:
@@ -278,7 +281,6 @@ class VideoResNet(nn.Module):
 
         if self.avgpool is not None:
             x = self.avgpool(x)
-
             # Flatten the layer to fc
             x = x.flatten(1)
             x= x.view(-1,clips,512)

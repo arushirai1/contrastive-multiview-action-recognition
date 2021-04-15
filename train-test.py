@@ -121,8 +121,12 @@ def main_training_testing():
                         help='Number of attention heads in each encoder layer')
     parser.add_argument('--base_endpoint', default='fc', type=str,
                         help='the endpoint of the base model before the transformer')
-    parser.add_argument('--eval_only', action='store_true', default=False,
-                        help='use augmentations defined in simclr')
+    parser.add_argument('--eval-only', action='store_true', default=False,
+                        help='Eval only mode')
+    parser.add_argument('--pos', action='store_true', default=False,
+                        help='add positional embedding for transformers')
+    parser.add_argument('--multiview_training', action='store_true', default=False,
+                        help='Add ')
     parser.add_argument('--pretrained_path', default='', type=str, help='path to weights of contrastive pretrained model')
 
 
@@ -143,17 +147,18 @@ def main_training_testing():
     def init_transformer(args):
         # only supporting resnet3d, TODO: Add support for i3d
         from models import video_resnet
-        base_model = video_resnet.r3d_18(endpoint=args.base_endpoint, spatio_temporal = args.spatio_temporal)
+        base_model = video_resnet.r3d_18(endpoint=args.base_endpoint, spatio_temporal = args.spatio_temporal, positional_flag = int(args.pos))
 
         if args.arch == 'transformer':
             from models import transformer_model2 as transformer_model
-            model = transformer_model.TransformerModel(base_model, args.num_class, d_model=args.d_model, N=args.num_layers, h=args.num_heads, dropout=0.3, endpoint=args.base_endpoint, no_clips=args.no_clips)
+            model = transformer_model.TransformerModel(base_model, args.num_class, d_model=args.d_model, N=args.num_layers, h=args.num_heads, dropout=0.3, endpoint=args.base_endpoint, no_clips=args.no_clips, positional_flag = args.pos, eval_mode=args.eval_only)
         return model
 
     def create_model(args):
         if args.arch == 'resnet3D18':
             import models.video_resnet as models
-            model = models.r3d_18(num_classes=args.num_class, pretrained=args.pretrained, spatio_temporal = args.spatio_temporal)
+            positional_flag = 1
+            model = models.r3d_18(num_classes=args.num_class, pretrained=args.pretrained, spatio_temporal = args.spatio_temporal,positional_flag = positional_flag)
         elif args.arch == 'i3d':
             import models.i3d as models
             model = models.i3d(num_classes=args.num_class, use_gru=args.use_gru, pretrained=args.pretrained,
@@ -196,10 +201,9 @@ def main_training_testing():
     writer = SummaryWriter(out_dir)
 
     if args.eval_only:
-        train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips=5,
-                                                                cross_subject=args.cross_subject, augment=args.augment)
-    else:
-        train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips=args.no_clips,
+        args.no_clips = 4
+
+    train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips=args.no_clips,
                                                                 cross_subject=args.cross_subject, augment=args.augment)
 
     model = create_model(args) if args.arch != 'contrastive' else init_contrastive(args)
@@ -266,13 +270,16 @@ def main_training_testing():
     model.zero_grad()
 
     if args.eval_only:
-        args.no_clips = 5
-        test_loss, test_acc, _ = test(args, test_loader, model, eval_mode=True)
+        test_loss, test_acc, _, results = test(args, test_loader, model, eval_mode=True)
+        os.makedirs('classification', exist_ok=True)
+        with open(f'classification/{EXP_NAME}.pickle', 'wb') as f:
+            pickle.dump(results, f)
+
         print(test_loss, test_acc)
     else:
         for epoch in range(args.start_epoch, args.epochs):
             train_loss, train_acc = train(args, train_loader, model, optimizer, scheduler, epoch)
-            test_loss, test_acc, _ = test(args, test_loader, model, epoch)
+            test_loss, test_acc, _, _ = test(args, test_loader, model, epoch)
             '''
             if epoch > (args.epochs+1)/2 and epoch%30==0: 
                 test_loss, test_acc, test_acc_2 = test(args, test_loader, test_model, epoch)
@@ -388,6 +395,7 @@ def test(args, test_loader, model, eval_mode=False):
     if not args.no_progress:
         test_loader = tqdm(test_loader)
 
+    results={i:[] for i in range(args.num_class)}
     model.eval()
 
     with torch.no_grad():
@@ -404,6 +412,9 @@ def test(args, test_loader, model, eval_mode=False):
                 outputs=einops.reduce(outputs, '(b c) logits -> b logits', 'mean', c = args.no_clips) # TODO REDUCE BY AVG
 
             loss = F.cross_entropy(outputs, targets, reduction='mean')
+
+            for i, target in enumerate(targets):
+                results[target.item()].append(np.argmax(outputs.data[i].cpu().numpy()))
 
             prec1, prec5 = accuracy(outputs.data, targets, topk=(1, 5))
             top1.update(prec1, inputs.size(0))
@@ -425,7 +436,7 @@ def test(args, test_loader, model, eval_mode=False):
         if not args.no_progress:
             test_loader.close()
 
-    return losses.avg, top1.avg, top5.avg
+    return losses.avg, top1.avg, top5.avg, results
 
 
 if __name__ == '__main__':

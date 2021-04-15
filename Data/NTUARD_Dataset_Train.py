@@ -111,8 +111,11 @@ class NTUARD_TRAIN(Dataset):
                 video_name = x[0]
                 scene, pid, rid, action = self._decrypt_vid_name(video_name.split("/")[1])
                 for view in self.views:
-                    data_paths.append({'path':os.path.join(self.frames_path, video_name, str(view)), 'no_frames':int(x[view])})
-                    targets.append(action)
+                    if int(x[view]) > self.num_clips*self.num_frames:
+                        data_paths.append({'path':os.path.join(self.frames_path, video_name, str(view)), 'no_frames':int(x[view])})
+                        targets.append(action)
+                    else:
+                        print("Insufficient # of frames: ", video_name, view, x[view], self.num_clips*self.num_frames)
         return data_paths, targets
 
 #dataset=NTUARD_TRAIN(root='',frames_path='/datasets/NTU-ARD/frames-240x135')
