@@ -49,10 +49,10 @@ class ContrastiveDataset(Dataset):
         positives = []
         ids = []
         for view_dict in video_paths:
-            video, ids_tmp = self.get_video(view_dict, ids)
-            if not self.random_temporal:
-                ids = ids_tmp
-            positives.append(video)
+                video, ids_tmp = self.get_video(view_dict, ids)
+                if not self.random_temporal:
+                    ids = ids_tmp
+                positives.append(video)
         return positives, video_label-1
     def _get_ids(self, no_frames, total_frames, skip_rate, ids):
         def handle_edge_case(ratio):
@@ -99,7 +99,7 @@ class ContrastiveDataset(Dataset):
                 clip = [self.transform(img) for img in video_container] #[transforms.functional.normalize(self.transform(img), normal_mean, normal_std) for img in video_container]
             clip = torch.stack(clip, 0).permute(1, 0, 2, 3)
             clips.append(clip)
-            return torch.stack(clips), [i/no_frames for i in ids]
+        return torch.stack(clips), [i/no_frames for i in ids]
 
     def _decrypt_vid_name(self, vid):
         scene = int(vid[1:4])
@@ -157,9 +157,9 @@ class ContrastiveDataset(Dataset):
                 x = x.split()
                 video_name = x[0]
                 scene, pid, rid, action = self._decrypt_vid_name(video_name.split("/")[1])
-                positive_pair={}
+                positive_pair=[]
                 for view in self.views:
-                    positive_pair[view]= {'path':os.path.join(self.frames_path, video_name, str(view)), 'no_frames':int(x[view])}
+                    positive_pair.append({'path':os.path.join(self.frames_path, video_name, str(view)), 'no_frames':int(x[view])})
                 targets.append(action)
                 data_paths.append(positive_pair)
         return data_paths, targets

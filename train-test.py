@@ -125,8 +125,12 @@ def main_training_testing():
                         help='Eval only mode')
     parser.add_argument('--pos', action='store_true', default=False,
                         help='add positional embedding for transformers')
-    parser.add_argument('--multiview_training', action='store_true', default=False,
-                        help='Add ')
+    parser.add_argument('--joint-only-multiview-training', action='store_true', default=False,
+                        help='train using joint view data')
+    parser.add_argument('--combined-multiview-training', action='store_true', default=False,
+                        help='train using joint view and single view data')
+    parser.add_argument('--curriculum-learning', action='store_true', default=False,
+                        help='have a graduated learning scheme where initially single views are presented and then multiview joint data is presented after a number of epochs')
     parser.add_argument('--pretrained_path', default='', type=str, help='path to weights of contrastive pretrained model')
 
 
@@ -151,7 +155,7 @@ def main_training_testing():
 
         if args.arch == 'transformer':
             from models import transformer_model2 as transformer_model
-            model = transformer_model.TransformerModel(base_model, args.num_class, d_model=args.d_model, N=args.num_layers, h=args.num_heads, dropout=0.3, endpoint=args.base_endpoint, no_clips=args.no_clips, positional_flag = args.pos, eval_mode=args.eval_only)
+            model = transformer_model.TransformerModel(base_model, args.num_class, d_model=args.d_model, N=args.num_layers, h=args.num_heads, dropout=0.3, endpoint=args.base_endpoint, positional_flag = args.pos, eval_mode=args.eval_only)
         return model
 
     def create_model(args):
@@ -176,7 +180,6 @@ def main_training_testing():
         # only supporting resnet3d, TODO: Add support for i3d
         def _init_backbone(num_classes):
             from models import video_resnet
-            print("Inside init backbone", num_classes)
             model = video_resnet.r3d_18(num_classes=num_classes, pretrained=args.pretrained, spatio_temporal = args.spatio_temporal)
             return model
 
@@ -204,7 +207,7 @@ def main_training_testing():
         args.no_clips = 4
 
     train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips=args.no_clips,
-                                                                cross_subject=args.cross_subject, augment=args.augment)
+                                                                cross_subject=args.cross_subject, augment=args.augment, contrastive=args.joint_only_multiview_training)
 
     model = create_model(args) if args.arch != 'contrastive' else init_contrastive(args)
     if args.arch == 'contrastive':
@@ -230,9 +233,7 @@ def main_training_testing():
 
     args.iteration = len(train_dataset) // args.batch_size // args.world_size
     train_sampler = RandomSampler
-    print("Fully-supervised", len(train_dataset))
     train_dataset, _ = random_split(train_dataset, (round(args.percentage*len(train_dataset)), round((1-args.percentage)*len(train_dataset))))
-    print("Semi-supervised", len(train_dataset))
     train_loader = DataLoader(
         train_dataset,
         sampler=train_sampler(train_dataset),
@@ -275,7 +276,7 @@ def main_training_testing():
         with open(f'classification/{EXP_NAME}.pickle', 'wb') as f:
             pickle.dump(results, f)
 
-        print(test_loss, test_acc)
+        print("Loss:", test_loss, "Acc:", test_acc)
     else:
         for epoch in range(args.start_epoch, args.epochs):
             train_loss, train_acc = train(args, train_loader, model, optimizer, scheduler, epoch)
@@ -347,7 +348,9 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
     model.train()
     for batch_idx, (inputs_x, targets_x) in enumerate(train_loader):
         data_time.update(time.time() - end)
-
+        if args.joint_only_multiview_training:
+            # reshape to combine the clips from different views, same instance into one sample
+            inputs_x = torch.cat(inputs_x, dim=1)
         inputs = inputs_x.to(args.device)
         targets_x = targets_x.to(args.device)
 

@@ -90,9 +90,6 @@ class MultiHeadedAttention(nn.Module):
         self.d_k = out_channels // num_heads
         self.dropout = nn.Dropout(p=dropout)
 
-        self.T = T
-        self.H = H
-        self.W = W
         self.num_heads = num_heads
 
         self.key_conv = nn.Conv3d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
@@ -101,6 +98,7 @@ class MultiHeadedAttention(nn.Module):
         self.upsample = nn.Conv3d(in_channels=out_channels, out_channels=in_channels, kernel_size=1)
 
     def forward(self, x, query):
+        T, H, W = x.shape[2:5]
         key = flatten(self.key_conv(x)) # shape: (batch_size, THW, d_model)
         query = flatten(self.query_conv(query)) # shape: (batch_size, THW, d_model)
         value = flatten(self.val_conv(x)) # shape: (batch_size, THW, d_model)
@@ -117,17 +115,14 @@ class MultiHeadedAttention(nn.Module):
         output = output.transpose(1, 2).contiguous() \
             .view(output.shape[0], -1, self.num_heads * self.d_k)
 
-        output = unflatten(output, self.T, self.H, self.W)
+        output = unflatten(output, T, H, W)
         output = self.upsample(output)
 
         return output
 
 class SelfAttention(nn.Module):
-    def __init__(self, in_channels=512, out_channels=256, T=1, H=7, W=7):
+    def __init__(self, in_channels=512, out_channels=256):
         super(SelfAttention, self).__init__()
-        self.T = T
-        self.H = H
-        self.W = W
         self.key_conv = nn.Conv3d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
         self.val_conv = nn.Conv3d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
         self.query_conv = nn.Conv3d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
@@ -135,6 +130,7 @@ class SelfAttention(nn.Module):
         self.scaling_param = nn.Parameter(torch.tensor(1.), requires_grad=True)
 
     def forward(self, x, query):
+        T, H, W = x.shape[2:5]
         key = flatten(self.key_conv(x)).transpose(-1,-2) # shape: (batch_size, d_model, THW)
         query = flatten(self.query_conv(query)) # shape: (batch_size, THW, d_model)
         value = flatten(self.val_conv(x)) # shape: (batch_size, THW, d_model)
@@ -143,7 +139,7 @@ class SelfAttention(nn.Module):
         attention = torch.matmul(key, query) / math.sqrt(key.shape[-1]) # shape: (batch_size, THW, THW)
         attention =  F.softmax(attention, -1)
         output = torch.matmul(attention, value.transpose(-1,-2))
-        output = unflatten(output, self.T, self.H, self.W)
+        output = unflatten(output, T, H, W)
         output = self.upsample(output)
         x = torch.add(x, torch.mul(output, self.scaling_param)) # add back to original input with scaling
         return x
@@ -171,10 +167,6 @@ class EncoderLayer(nn.Module):
         self.sublayer = clones(SublayerConnection(size, dropout), 2)
         self.size = size
 
-        self.T = T
-        self.H = H
-        self.W = W
-
     def forward(self, x, query):
         "Follow Figure 1 (left) for connections."
         x = self.sublayer[0](x, lambda x: self.self_attn(x, query))
@@ -196,7 +188,7 @@ class Encoder(nn.Module):
         return self.norm(x)
 
 class TransformerModel(nn.Module):
-    def __init__(self, base_model, num_classes, d_model=128, N=3, h=2, dropout=0.3, endpoint='', no_clips=3, positional_flag=False, eval_mode=False):
+    def __init__(self, base_model, num_classes, d_model=128, N=3, h=2, dropout=0.3, endpoint='', positional_flag=False, eval_mode=False):
         super(TransformerModel, self).__init__()
         self.base_model = base_model
         self.endpoint = endpoint
@@ -208,29 +200,25 @@ class TransformerModel(nn.Module):
         else:
             positional_embedding_size = 0
 
-        if eval_mode:
-            no_clips=1
         if self.endpoint in ['layer4', 'layer3', 'avgpool']:
             if endpoint == 'layer4':
                 in_channels = 512 + positional_embedding_size
-                T, H, W = (no_clips, 7, 7)
             elif endpoint == 'layer3':
                 in_channels = 256 + positional_embedding_size
-                T, H, W = (no_clips*2, 14, 14)
             elif endpoint == 'avgpool':
                 # use temporal attention module
                 in_channels = 512 + positional_embedding_size
-                T, H, W = (no_clips, 1, 1)
             if positional_flag:
                 self.positional_embedding = PositionalEncoding(in_channels, dropout)
             else:
                 self.positional_embedding = None
 
             feed_forward = PositionwiseFeedForward(in_channels, in_channels * 2, dropout)
-            attention = MultiHeadedAttention(in_channels=in_channels, out_channels=d_model, num_heads=h, T=T, H=H, W=W)
+            attention = MultiHeadedAttention(in_channels=in_channels, out_channels=d_model, num_heads=h)
 
             self.encoder = Encoder(EncoderLayer(in_channels, c(attention), feed_forward=c(feed_forward), dropout=dropout), N)
-            self.avg_pool = nn.AvgPool3d(kernel_size=(T,H,W))
+            #self.avg_pool = nn.AvgPool3d(kernel_size=(T,H,W))
+            self.avg_pool = lambda input: nn.functional.adaptive_avg_pool3d(input, 1)
 
         self.classifier = nn.Sequential(nn.Linear(in_channels, d_model), nn.ReLU(), nn.Linear(d_model, num_classes))
         self.initialize_parameters()

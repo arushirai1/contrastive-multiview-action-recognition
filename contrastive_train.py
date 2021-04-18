@@ -196,7 +196,6 @@ def main_training_testing(EXP_NAME):
 
     min_train_loss=math.inf
     train_loss_list=[]
-    print("before resume")
     if args.resume:
         assert os.path.isfile(
             args.resume), "Error: no checkpoint directory found!"
@@ -208,7 +207,6 @@ def main_training_testing(EXP_NAME):
         optimizer.load_state_dict(checkpoint['optimizer'])
         scheduler.load_state_dict(checkpoint['scheduler'])
         args.start_epoch = start_epoch
-    print('Epochs', args.start_epoch, args.epochs)
     model.zero_grad()
     try:
         for epoch in range(args.start_epoch, args.epochs):
