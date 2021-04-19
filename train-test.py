@@ -206,8 +206,8 @@ def main_training_testing():
     if args.eval_only:
         args.no_clips = 4
 
-    train_dataset, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips=args.no_clips,
-                                                                cross_subject=args.cross_subject, augment=args.augment, contrastive=args.joint_only_multiview_training)
+    train_datasets, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, num_clips=args.no_clips,
+                                                                cross_subject=args.cross_subject, augment=args.augment, contrastive=args.joint_only_multiview_training, args = args)
 
     model = create_model(args) if args.arch != 'contrastive' else init_contrastive(args)
     if args.arch == 'contrastive':
@@ -231,16 +231,16 @@ def main_training_testing():
 
     model = model.to(args.device)
 
-    args.iteration = len(train_dataset) // args.batch_size // args.world_size
+    args.iteration = sum([len(dataset) for dataset in train_datasets]) // args.batch_size // args.world_size
     train_sampler = RandomSampler
-    train_dataset, _ = random_split(train_dataset, (round(args.percentage*len(train_dataset)), round((1-args.percentage)*len(train_dataset))))
-    train_loader = DataLoader(
+    train_datasets = [random_split(train_dataset, (round(args.percentage*len(train_dataset)), round((1-args.percentage)*len(train_dataset))))[0] for train_dataset in train_datasets]
+    train_loaders = [DataLoader(
         train_dataset,
         sampler=train_sampler(train_dataset),
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         drop_last=True,
-        pin_memory=True)
+        pin_memory=True) for train_dataset in train_datasets]
 
     test_loader = DataLoader(
         test_dataset,
@@ -279,7 +279,7 @@ def main_training_testing():
         print("Loss:", test_loss, "Acc:", test_acc)
     else:
         for epoch in range(args.start_epoch, args.epochs):
-            train_loss, train_acc = train(args, train_loader, model, optimizer, scheduler, epoch)
+            train_loss, train_acc = train(args, train_loaders, model, optimizer, scheduler, epoch)
             test_loss, test_acc, _, _ = test(args, test_loader, model, epoch)
             '''
             if epoch > (args.epochs+1)/2 and epoch%30==0: 
@@ -333,7 +333,7 @@ def accuracy(output, target, topk=(1,)):
     return res
 
 
-def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
+def train(args, train_loaders, model, optimizer, scheduler, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     top1 = AverageMeter()
@@ -344,44 +344,42 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
     if not args.no_progress:
         p_bar = tqdm(range(args.iteration))
 
-    train_loader = labeled_trainloader
     model.train()
-    for batch_idx, (inputs_x, targets_x) in enumerate(train_loader):
-        data_time.update(time.time() - end)
-        if args.joint_only_multiview_training:
-            # reshape to combine the clips from different views, same instance into one sample
-            inputs_x = torch.cat(inputs_x, dim=1)
-        inputs = inputs_x.to(args.device)
-        targets_x = targets_x.to(args.device)
 
-        logits_x = model(inputs)
-        loss = F.cross_entropy(logits_x, targets_x, reduction='mean')
-        loss.backward()
-        losses.update(loss.item())
+    for train_loader in train_loaders:
+        for batch_idx, (inputs_x, targets_x) in enumerate(train_loader):
+            data_time.update(time.time() - end)
+            inputs = inputs_x.to(args.device)
+            targets_x = targets_x.to(args.device)
 
-        prec1, prec5 = accuracy(logits_x.data, targets_x, topk=(1, 5))
-        top1.update(prec1, inputs.size(0))
-        top5.update(prec5, inputs.size(0))
+            logits_x = model(inputs)
+            loss = F.cross_entropy(logits_x, targets_x, reduction='mean')
+            loss.backward()
+            losses.update(loss.item())
 
-        optimizer.step()
-        scheduler.step()
-        model.zero_grad()
+            prec1, prec5 = accuracy(logits_x.data, targets_x, topk=(1, 5))
+            top1.update(prec1, inputs.size(0))
+            top5.update(prec5, inputs.size(0))
 
-        batch_time.update(time.time() - end)
-        end = time.time()
-        if not args.no_progress:
-            p_bar.set_description(
-                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}".format(
-                    epoch=epoch + 1,
-                    epochs=args.epochs,
-                    batch=batch_idx + 1,
-                    iter=args.iteration,
-                    lr=scheduler.get_lr()[0],
-                    data=data_time.avg,
-                    bt=batch_time.avg,
-                    loss=losses.avg,
-                    acc=top1.avg))
-            p_bar.update()
+            optimizer.step()
+            scheduler.step()
+            model.zero_grad()
+
+            batch_time.update(time.time() - end)
+            end = time.time()
+            if not args.no_progress:
+                p_bar.set_description(
+                    "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}".format(
+                        epoch=epoch + 1,
+                        epochs=args.epochs,
+                        batch=batch_idx + 1,
+                        iter=args.iteration,
+                        lr=scheduler.get_lr()[0],
+                        data=data_time.avg,
+                        bt=batch_time.avg,
+                        loss=losses.avg,
+                        acc=top1.avg))
+                p_bar.update()
     if not args.no_progress:
         p_bar.close()
 

@@ -20,13 +20,14 @@ import random
 
 
 class ContrastiveDataset(Dataset):
-    def __init__(self, root = '', fold=1, transform=None, frames_path='', num_clips=2, num_frames=8, multiview=False, hard_positive=False, cross_subject=False, random_temporal=True):
+    def __init__(self, root = '', fold=1, transform=None, frames_path='', num_clips=2, num_frames=8, multiview=False, hard_positive=False, cross_subject=False, random_temporal=True, args=None):
 
         self.num_clips = num_clips
         self.num_frames = num_frames
         self.frames_path = frames_path
         self.root = root
         self.cross_subject = cross_subject
+        self.args = args
         if not cross_subject:
             self.views=[2,3]
         else:
@@ -53,6 +54,8 @@ class ContrastiveDataset(Dataset):
                 if not self.random_temporal:
                     ids = ids_tmp
                 positives.append(video)
+        if self.args.combined_multiview_training or self.args.joint_only_multiview_training:
+            positives = torch.cat(positives, dim=0)
         return positives, video_label-1
     def _get_ids(self, no_frames, total_frames, skip_rate, ids):
         def handle_edge_case(ratio):
