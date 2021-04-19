@@ -48,4 +48,25 @@ class ContrastiveModel(nn.Module):
             x = self.classifier(x)
         return x
 
+class ContrastiveMultiTaskModel(nn.Module):
+    def __init__(self, init_base_model, repr_size, action_classes_size):
+        super(ContrastiveMultiTaskModel, self).__init__()
+        self.base_model = init_base_model(num_classes=action_classes_size)
+        self.classifier_head = nn.Linear(in_features=self.base_model.fc.in_features, out_features=action_classes_size)
+        self.contrastive_head = self.build_mlp(self.base_model.fc.in_features, repr_size)
+        self.base_model.fc=None
 
+    def build_mlp(self, encoder_feature_size, repr_size):
+        hidden = nn.Linear(in_features=encoder_feature_size, out_features=repr_size)
+        output_layer = nn.Linear(in_features=repr_size, out_features=repr_size)
+        return nn.Sequential(hidden, nn.ReLU(), output_layer)
+
+    def forward(self, x, mode):
+        x = self.base_model(x)
+        #x = (torch.sum(x, dim=1) / clips) #TODO adapt for multiclip
+        if mode == "contrastive":
+            x = self.contrastive_head(x)
+        else:
+            x = self.classifier_head(x)
+
+        return x

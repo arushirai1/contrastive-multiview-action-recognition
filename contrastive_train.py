@@ -15,16 +15,16 @@ import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import LambdaLR
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, random_split
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from Data.UCF101 import get_ucf101, get_ntuard
 from utils import AverageMeter, accuracy
-from models.contrastive_model import ContrastiveModel
+from models.contrastive_model import ContrastiveModel, ContrastiveMultiTaskModel
 import math
 from loss import info_nce_loss
 from torch.cuda.amp import autocast, GradScaler
-import pdb
+import einops
 
 DATASET_GETTERS = {'ucf101': get_ucf101, 'ntuard': get_ntuard}
 
@@ -133,6 +133,10 @@ def main_training_testing(EXP_NAME):
                         help='total classes')
     parser.add_argument('--exp-name', default='NTUARD_SUPERVISED_TRAINING', type=str,
                         help='Experiment name')
+    parser.add_argument('--semi-supervised-contrastive-joint-training', action='store_true', default=False,
+                        help='Will train supervised and contrastive model simultaneously')
+    parser.add_argument('--percentage', default=1.0, type=float,
+                        help='in semi-supervised setting, what split do you want to use')
 
     args = parser.parse_args()
     if args.cross_subject and args.no_views < 3 and not args.hard_positive:
@@ -155,7 +159,6 @@ def main_training_testing(EXP_NAME):
 
     def _init_backbone(num_classes):
         args.num_class = num_classes
-        print(args)
         return create_model(args)
 
     device = torch.device('cuda', args.gpu_id)
@@ -172,20 +175,30 @@ def main_training_testing(EXP_NAME):
 
     writer = SummaryWriter(out_dir)
 
-    train_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips, multiview=args.multiview, augment=args.augment, cross_subject=args.cross_subject, hard_positive=args.hard_positive, random_temporal=args.random_temporal)
+    train_datasets, test_dataset = DATASET_GETTERS[args.dataset]('Data', args.frames_path, contrastive=True, num_clips=args.no_clips, multiview=args.multiview, augment=args.augment, cross_subject=args.cross_subject, hard_positive=args.hard_positive, random_temporal=args.random_temporal)
 
-    model = ContrastiveModel(_init_backbone, args.feature_size)
+    if args.semi_supervised_contrastive_joint_training:
+        with train_datasets[-1] as train_dataset:
+            train_datasets[-1] = random_split(train_dataset, (round(args.percentage * len(train_dataset)), round((1 - args.percentage) * len(train_dataset))))[0]
+        model = ContrastiveMultiTaskModel(_init_backbone, args.feature_size, args.num_classes)
+    else:
+        model = ContrastiveModel(_init_backbone, args.feature_size)
+    args.iteration = sum([len(dataset) for dataset in train_datasets]) // args.batch_size // args.world_size
     model.to(args.device)
 
-    args.iteration = len(train_dataset) // args.batch_size // args.world_size
-    train_sampler = RandomSampler
-
-    train_loader = DataLoader(
+    train_loaders = [DataLoader(
         train_dataset,
-        sampler=train_sampler(train_dataset),
+        sampler=RandomSampler(train_dataset),
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         drop_last=True,
+        pin_memory=True) for train_dataset in train_datasets]
+
+    test_loader = DataLoader(
+        test_dataset,
+        sampler=SequentialSampler(test_dataset),
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
         pin_memory=True)
 
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, nesterov=args.nesterov)
@@ -195,6 +208,7 @@ def main_training_testing(EXP_NAME):
         optimizer, args.warmup * args.iteration, args.total_steps)
 
     min_train_loss=math.inf
+    best_acc=0
     train_loss_list=[]
     if args.resume:
         assert os.path.isfile(
@@ -211,11 +225,19 @@ def main_training_testing(EXP_NAME):
     try:
         for epoch in range(args.start_epoch, args.epochs):
 
-            train_loss, train_acc = train(args, train_loader, model, optimizer, scheduler, epoch)
-            writer.add_scalar('Loss/train', train_loss, epoch)
-            writer.add_scalar('Accuracy/train', train_acc, epoch)
-            is_best = min_train_loss > train_loss
-            min_train_loss = train_loss if is_best else min_train_loss
+            train_losses, train_accs = train(args, train_loaders, model, optimizer, scheduler, epoch)
+            for mode in ["contrastive", "semi_supervised"]:
+                writer.add_scalar(mode+'Loss/train', train_losses[mode], epoch)
+                writer.add_scalar(mode+'Accuracy/train', train_accs[mode], epoch)
+            if args.semi_supervised_contrastive_joint_training:
+                test_loss, test_acc, _, _ = test(args, test_loader, model, epoch)
+                writer.add_scalar('Loss/test', test_loss, epoch)
+                writer.add_scalar('Accuracy/test', test_acc, epoch)
+                is_best = test_acc > best_acc
+                best_acc = test_acc if is_best else best_acc
+            else:
+                is_best = min_train_loss > train_losses["contrastive"]
+                min_train_loss = train_losses["contrastive"] if is_best else min_train_loss
 
             # save checkpoint
             if args.local_rank == -1 or torch.distributed.get_rank() == 0:
@@ -223,7 +245,7 @@ def main_training_testing(EXP_NAME):
                 save_checkpoint({
                     'epoch': epoch + 1,
                     'state_dict': model_to_save.state_dict(),
-                    'loss': train_loss,
+                    'loss': train_losses["contrastive"],
                     'best_loss': min_train_loss,
                     'optimizer': optimizer.state_dict(),
                     'scheduler': scheduler.state_dict(),
@@ -239,75 +261,134 @@ def main_training_testing(EXP_NAME):
     except Exception as e:
         print("Exception", e)
 
-def train(args, labeled_trainloader, model, optimizer, scheduler, epoch):
+def train(args, train_loaders, model, optimizer, scheduler, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    top1 = AverageMeter()
+    top1 = {}
     top5 = AverageMeter()
-    losses = AverageMeter()
+    losses = {}
     end = time.time()
+    # TODO each mode should have seperate batch size
 
     if not args.no_progress:
         p_bar = tqdm(range(args.iteration))
 
-    train_loader = labeled_trainloader
     model.train()
     scaler = GradScaler() # rescale the loss to get gradients when using autocast
-    for batch_idx, (inputs_x, labels) in enumerate(train_loader):
-        data_time.update(time.time() - end)
-        inputs_x = torch.cat(inputs_x, dim=0)
-        inputs = inputs_x.to(args.device)
-        labels = torch.cat([labels for i in range(args.no_views)])
-        labels = labels.to(args.device)
+    for mode, train_loader in zip(["contrastive", "semi_supervised"], train_loaders):
+        losses[mode] = AverageMeter()  # seperate loss for each mode
+        top1[mode] = AverageMeter()  # seperate acc for each mode
+        for batch_idx, (inputs_x, labels) in enumerate(train_loader):
+            data_time.update(time.time() - end)
 
-        with autocast():
-            logits_x = model(inputs)
-            '''
-            try:
-                logits, labels = info_nce_loss(logits_x, args.batch_size, args.no_views, supervised=args.hard_positive, labels=labels)
-            except Exception as e:
-            '''
+            if mode == "contrastive":
+                inputs_x = torch.cat(inputs_x, dim=0)
+                labels = torch.cat([labels for i in range(args.no_views)])
 
-            logits, labels = info_nce_loss(logits_x, args.batch_size, args.no_views)
-        labels = labels.type(torch.LongTensor).to(args.device)
-        loss = F.cross_entropy(logits, labels, reduction='mean')
-        batch_top1, batch_top5 = accuracy(logits, labels, topk=(1, 5))
+            inputs = inputs_x.to(args.device)
+            labels = labels.to(args.device)
 
-        # Scales the loss, and calls backward()
-        # to create scaled gradients
-        scaler.scale(loss).backward()
-        losses.update(loss.item())
-        top1.update(batch_top1[0])
-        top5.update(batch_top5[0])
-        # Unscales gradients and calls
-        # or skips optimizer.step() if nan or inf TODO:check if there is a callback if this happens/end train
-        scaler.step(optimizer)
+            with autocast():
+                logits_x = model(inputs, mode)
+                '''
+                try:
+                    logits, labels = info_nce_loss(logits_x, args.batch_size, args.no_views, supervised=args.hard_positive, labels=labels)
+                except Exception as e:
+                '''
+                if mode == "contrastive":
+                    logits, labels = info_nce_loss(logits_x, args.batch_size, args.no_views)
+            labels = labels.type(torch.LongTensor).to(args.device)
+            loss = F.cross_entropy(logits, labels, reduction='mean')
+            batch_top1, batch_top5 = accuracy(logits, labels, topk=(1, 5))
 
-        # Updates the scale for next iteration
-        scaler.update()
-        scheduler.step()
-        model.zero_grad()
+            # Scales the loss, and calls backward()
+            # to create scaled gradients
+            scaler.scale(loss).backward()
+            losses[mode].update(loss.item())
+            top1[mode].update(batch_top1[0])
+            top5.update(batch_top5[0])
+            # Unscales gradients and calls
+            scaler.step(optimizer)
 
-        batch_time.update(time.time() - end)
-        end = time.time()
+            # Updates the scale for next iteration
+            scaler.update()
+            scheduler.step()
+            model.zero_grad()
 
-        if not args.no_progress:
-            p_bar.set_description(
-                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}".format(
-                    epoch=epoch + 1,
-                    epochs=args.epochs,
-                    batch=batch_idx + 1,
-                    iter=args.iteration,
-                    lr=scheduler.get_lr()[0],
-                    data=data_time.avg,
-                    bt=batch_time.avg,
-                    loss=losses.avg,
-                    acc=top1.avg))
-            p_bar.update()
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+            if not args.no_progress:
+                p_bar.set_description(
+                    "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f} Mode: {mode}".format(
+                        epoch=epoch + 1,
+                        epochs=args.epochs,
+                        batch=batch_idx + 1,
+                        iter=args.iteration,
+                        lr=scheduler.get_lr()[0],
+                        data=data_time.avg,
+                        bt=batch_time.avg,
+                        loss=losses[mode].avg,
+                        acc=top1[mode].avg,
+                        mode=mode))
+                p_bar.update()
     if not args.no_progress:
         p_bar.close()
 
-    return losses.avg, top1.avg
+    return {mode:loss.avg for mode, loss in losses.items()}, {mode:acc.avg for mode, acc in top1.items()}
+
+def test(args, test_loader, model, eval_mode=False):
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+    end = time.time()
+    if not args.no_progress:
+        test_loader = tqdm(test_loader)
+
+    results={i:[] for i in range(args.num_class)}
+    model.eval()
+
+    with torch.no_grad():
+        for batch_idx, (inputs, targets) in enumerate(test_loader):
+            if eval_mode:
+                inputs=einops.rearrange(inputs, 'b c ... -> (b c) ...', c = args.no_clips)
+            data_time.update(time.time() - end)
+
+            inputs = inputs.to(args.device)
+            targets = targets.to(args.device)
+
+            outputs = model(inputs)
+            if eval_mode:
+                outputs=einops.reduce(outputs, '(b c) logits -> b logits', 'mean', c = args.no_clips)
+
+            loss = F.cross_entropy(outputs, targets, reduction='mean')
+
+            for i, target in enumerate(targets):
+                results[target.item()].append(np.argmax(outputs.data[i].cpu().numpy()))
+
+            prec1, prec5 = accuracy(outputs.data, targets, topk=(1, 5))
+            top1.update(prec1, inputs.size(0))
+            top5.update(prec5, inputs.size(0))
+
+            losses.update(loss.item(), inputs.shape[0])
+            batch_time.update(time.time() - end)
+            end = time.time()
+            if not args.no_progress:
+                test_loader.set_description(
+                    "Test Iter: {batch:4}/{iter:4}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Top 1 Acc: {acc:.3f}".format(
+                        batch=batch_idx + 1,
+                        iter=len(test_loader),
+                        data=data_time.avg,
+                        bt=batch_time.avg,
+                        loss=losses.avg,
+                        acc=top1.avg
+                    ))
+        if not args.no_progress:
+            test_loader.close()
+
+    return losses.avg, top1.avg, top5.avg, results
 
 if __name__ == '__main__':
     cudnn.benchmark = True
