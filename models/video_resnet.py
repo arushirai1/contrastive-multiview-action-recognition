@@ -113,8 +113,8 @@ class BasicBlock(nn.Module):
     def forward(self, x):
         residual = x
 
-        out = self.conv1(x)
-        out = self.conv2(out)
+        out1 = self.conv1(x)
+        out = self.conv2(out1)
         if self.downsample is not None:
             residual = self.downsample(x)
 
@@ -164,6 +164,7 @@ class Bottleneck(nn.Module):
         out = self.conv3(out)
 
         if self.downsample is not None:
+            breakpoint()
             residual = self.downsample(x)
 
         out += residual
@@ -204,7 +205,7 @@ class VideoResNet(nn.Module):
 
     def __init__(self, block, conv_makers, layers,
                  stem, num_classes=400,
-                 zero_init_residual=False, endpoint='fc', spatio_temporal=False, positional_flag=0):
+                 zero_init_residual=False, endpoint='fc', spatio_temporal=False, positional_flag=0, num_frames=8):
         """Generic resnet video generator.
         Args:
             block (nn.Module): resnet building block
@@ -216,7 +217,7 @@ class VideoResNet(nn.Module):
         """
         super(VideoResNet, self).__init__()
         self.inplanes = 64
-
+        self.num_frames=num_frames
         self.stem = stem()
         self.layers = []
         layer1 = self._make_layer(block, conv_makers[0], 64, layers[0], stride=1, dropout=0.3)
@@ -249,7 +250,7 @@ class VideoResNet(nn.Module):
 
     def extract_representation(self, x):
         clips = x.shape[1]
-        x = x.view(-1, 3, 8, 112, 112)
+        x = x.view(-1, 3, self.num_frames, 112, 112)
         x = self.stem(x)
 
         for layer in self.layers:
@@ -271,7 +272,7 @@ class VideoResNet(nn.Module):
             clips = 1
         else:
             clips=x.shape[1]
-        x=x.view(-1,3,8, 112,112)
+        x=x.view(-1,3,self.num_frames, 112,112)
         x = self.stem(x)
         for layer in self.layers:
             x = layer(x)
